@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>EQUILIBRIA // 02 — REACTION-DIFFUSION METABOLISM</title>
+<style>
+  /* ============================================================
+     EQUILIBRIA — shared cyberdeck / solarpunk aesthetic system
+     Piece 02: Reaction-Diffusion Metabolism (Gray-Scott)
+     ============================================================ */
+
+  :root {
+    --bg:        #0a0e0b;   /* near-black, slightly warm-green */
+    --hot:       #ff7b00;   /* amber/orange (active) */
+    --hotter:    #ff4d00;   /* hottest */
+    --gold:      #d4a017;   /* warm gold mid */
+    --verdigris: #2a9d8f;   /* settled / verdant */
+    --deep:      #1b4d3e;   /* deep verdant */
+    --phosphor:  #00ff9c;   /* phosphor green text */
+    --dim:       #5b7d6e;   /* dim label text */
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+  }
+
+  /* The simulation canvas fills the window */
+  #sim {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    display: block;
+    z-index: 0;
+  }
+
+  /* ---- Cyberdeck terminal overlay -------------------------------- */
+
+  .overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    pointer-events: none;          /* let mouse pass through to canvas */
+    font-family: 'IBM Plex Mono','SF Mono',ui-monospace,'Menlo',monospace;
+    color: var(--phosphor);
+  }
+
+  .label {
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 10.5px;
+    line-height: 1.7;
+  }
+
+  /* Title bar (top-left) */
+  .titlebar {
+    position: absolute;
+    top: 22px;
+    left: 26px;
+    max-width: 60ch;
+  }
+  .titlebar .name {
+    font-size: 13px;
+    color: var(--hot);
+    text-shadow: 0 0 8px rgba(255,123,0,0.55), 0 0 2px rgba(255,123,0,0.9);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+  .titlebar .caption {
+    margin-top: 6px;
+    color: var(--verdigris);
+    text-shadow: 0 0 7px rgba(42,157,143,0.5);
+    font-size: 10.5px;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+  }
+
+  /* Live readout panel (bottom-right) */
+  .readout {
+    position: absolute;
+    right: 26px;
+    bottom: 24px;
+    text-align: right;
+    border-right: 1px solid rgba(0,255,156,0.18);
+    padding-right: 14px;
+  }
+  .readout .row { display: block; white-space: nowrap; }
+  .readout .k {
+    color: var(--dim);
+    letter-spacing: 0.14em;
+  }
+  .readout .v {
+    color: var(--phosphor);
+    text-shadow: 0 0 7px rgba(0,255,156,0.45);
+    margin-left: 8px;
+  }
+  .readout .v.amber {
+    color: var(--hot);
+    text-shadow: 0 0 7px rgba(255,123,0,0.5);
+  }
+
+  /* Corner ticks — small cyberdeck framing marks */
+  .corner {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    border-color: rgba(0,255,156,0.30);
+    border-style: solid;
+    border-width: 0;
+  }
+  .corner.tl { top: 14px;  left: 14px;  border-top-width: 1px;  border-left-width: 1px; }
+  .corner.tr { top: 14px;  right: 14px; border-top-width: 1px;  border-right-width: 1px; }
+  .corner.bl { bottom: 14px; left: 14px; border-bottom-width: 1px; border-left-width: 1px; }
+  .corner.br { bottom: 14px; right: 14px; border-bottom-width: 1px; border-right-width: 1px; }
+
+  /* Status strip (top-right) */
+  .status {
+    position: absolute;
+    top: 22px;
+    right: 26px;
+    text-align: right;
+    color: var(--gold);
+    text-shadow: 0 0 6px rgba(212,160,23,0.4);
+  }
+  .blink { animation: blink 1.4s steps(2,start) infinite; }
+  @keyframes blink { 50% { opacity: 0.25; } }
+
+  /* ---- CRT effects ---------------------------------------------- */
+
+  /* faint scanlines */
+  .crt-scan {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(0,0,0,0)    0px,
+      rgba(0,0,0,0)    2px,
+      rgba(0,0,0,0.10) 3px,
+      rgba(0,0,0,0)    4px
+    );
+    mix-blend-mode: multiply;
+    opacity: 0.55;
+  }
+  /* soft vignette */
+  .crt-vignette {
+    position: fixed;
+    inset: 0;
+    z-index: 21;
+    pointer-events: none;
+    background: radial-gradient(
+      ellipse at center,
+      rgba(0,0,0,0) 52%,
+      rgba(0,0,0,0.32) 88%,
+      rgba(0,0,0,0.62) 100%
+    );
+  }
+
+  noscript { color: var(--phosphor); font-family: monospace; }
+</style>
+</head>
+<body>
+  <canvas id="sim"></canvas>
+
+  <!-- Cyberdeck terminal overlay -->
+  <div class="overlay">
+    <div class="corner tl"></div>
+    <div class="corner tr"></div>
+    <div class="corner bl"></div>
+    <div class="corner br"></div>
+
+    <div class="titlebar">
+      <div class="name">EQUILIBRIA // 02 — REACTION-DIFFUSION METABOLISM</div>
+      <div class="caption">ORDER SUSTAINED BY DISSIPATION · A LIVING SYSTEM HELD IN DYNAMIC EQUILIBRIUM</div>
+    </div>
+
+    <div class="status label">
+      <div>GRAY–SCOTT SOLVER · <span class="blink">●</span> LIVE</div>
+      <div id="renderer-tag">WEBGL2 PING-PONG</div>
+    </div>
+
+    <div class="readout label">
+      <span class="row"><span class="k">FEED&nbsp;f</span><span class="v amber" id="r-feed">0.0000</span></span>
+      <span class="row"><span class="k">KILL&nbsp;k</span><span class="v amber" id="r-kill">0.0000</span></span>
+      <span class="row"><span class="k">ITER</span><span class="v" id="r-iter">0</span></span>
+      <span class="row"><span class="k">ACTIVE</span><span class="v" id="r-active">0.0%</span></span>
+      <span class="row"><span class="k">MASS</span><span class="v" id="r-mass">STEADY</span></span>
+      <span class="row"><span class="k">FPS</span><span class="v" id="r-fps">--</span></span>
+    </div>
+  </div>
+
+  <div class="crt-scan"></div>
+  <div class="crt-vignette"></div>
+
+  <noscript>This piece requires JavaScript and WebGL.</noscript>
+
+<script>
+"use strict";
+/* ================================================================
+   EQUILIBRIA 02 — REACTION-DIFFUSION METABOLISM
+   ----------------------------------------------------------------
+   Gray-Scott reaction-diffusion on the GPU via WebGL2 ping-pong
+   float textures. Two chemicals U and V diffuse and react:
+
+       U' = Du*Lap(U) - U*V^2 + f*(1 - U)
+       V' = Dv*Lap(V) + U*V^2 - (f + k)*V
+
+   The pattern is sustained by a constant feed f (energy input)
+   and kill k (dissipation) -> it settles into a dynamic steady
+   state ("MASS: STEADY") rather than dying out or filling up.
+
+   A render pass maps the V concentration through a thermal ->
+   verdant gradient: active growth fronts read amber-hot, settled
+   tissue reads verdigris-green, with a cheap bloom.
+   ================================================================ */
+
+(function () {
+
+  // ---- Configuration / tuning knobs ----------------------------
+  const SIM_SIZE      = 320;   // simulation grid (square). 256 / 320 / 384 sensible.
+  const STEPS_PER_FRAME = 14;  // solver iterations per displayed frame (smoothness vs speed)
+  const Du = 0.16;             // diffusion rate of U
+  const Dv = 0.08;             // diffusion rate of V  (Du > Dv -> coral/membrane patterns)
+  const DT = 1.0;              // solver timestep
+
+  // Base feed/kill — the "coral / mitosis" regime. Drifts slowly (see below).
+  const FEED_BASE = 0.0367;
+  const KILL_BASE = 0.0649;
+  const DRIFT_F   = 0.0016;    // amplitude of slow feed drift
+  const DRIFT_K   = 0.0011;    // amplitude of slow kill drift
+  const DRIFT_SPEED = 0.00035; // radians per ms-ish (very slow)
+
+  const canvas = document.getElementById("sim");
+
+  // ---- WebGL2 context ------------------------------------------
+  const gl = canvas.getContext("webgl2", {
+    antialias: false,
+    preserveDrawingBuffer: false,
+    premultipliedAlpha: false,
+  });
+
+  if (!gl) {
+    // WebGL2 unavailable -> run the pure-CPU Canvas2D solver instead of dying.
+    startCanvas2DFallback();
+    return;
+  }
+
+  // We need to render INTO float textures.
+  const extCBF = gl.getExtension("EXT_color_buffer_float");
+  if (!extCBF) {
+    // Float render targets unavailable -> same CPU fallback path.
+    startCanvas2DFallback();
+    return;
+  }
+
+  // ---- Shader helpers ------------------------------------------
+  function compile(type, src) {
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src);
+    gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+      const log = gl.getShaderInfoLog(sh);
+      gl.deleteShader(sh);
+      throw new Error("Shader compile error:\n" + log + "\n---\n" + src);
+    }
+    return sh;
+  }
+
+  function program(vsSrc, fsSrc) {
+    const p = gl.createProgram();
+    gl.attachShader(p, compile(gl.VERTEX_SHADER, vsSrc));
+    gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fsSrc));
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+      throw new Error("Program link error:\n" + gl.getProgramInfoLog(p));
+    }
+    return p;
+  }
+
+  // ---- Geometry: a single full-screen triangle -----------------
+  const VS = `#version 300 es
+  precision highp float;
+  // Full-screen triangle generated from gl_VertexID — no buffers needed.
+  out vec2 v_uv;
+  void main() {
+    vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+    v_uv = p;                       // 0..2 -> we use it as 0..1 region
+    gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+  }`;
+
+  // ---- Gray-Scott simulation fragment shader -------------------
+  const FS_SIM = `#version 300 es
+  precision highp float;
+  in vec2 v_uv;
+  out vec4 outColor;
+
+  uniform sampler2D u_state;   // .r = U, .g = V
+  uniform vec2  u_texel;       // 1.0 / size
+  uniform float u_Du;
+  uniform float u_Dv;
+  uniform float u_feed;
+  uniform float u_kill;
+  uniform float u_dt;
+
+  void main() {
+    vec2 uv = v_uv;
+
+    // 9-point Laplacian (toroidal wrap via fract) for organic continuity.
+    vec2 c  = texture(u_state, uv).rg;
+
+    vec2 l  = texture(u_state, fract(uv + vec2(-u_texel.x, 0.0))).rg;
+    vec2 r  = texture(u_state, fract(uv + vec2( u_texel.x, 0.0))).rg;
+    vec2 t  = texture(u_state, fract(uv + vec2(0.0,  u_texel.y))).rg;
+    vec2 b  = texture(u_state, fract(uv + vec2(0.0, -u_texel.y))).rg;
+    vec2 tl = texture(u_state, fract(uv + vec2(-u_texel.x,  u_texel.y))).rg;
+    vec2 tr = texture(u_state, fract(uv + vec2( u_texel.x,  u_texel.y))).rg;
+    vec2 bl = texture(u_state, fract(uv + vec2(-u_texel.x, -u_texel.y))).rg;
+    vec2 br = texture(u_state, fract(uv + vec2( u_texel.x, -u_texel.y))).rg;
+
+    // Weighted Laplacian (orthogonal 0.2, diagonal 0.05, center -1.0)
+    vec2 lap = (l + r + t + b) * 0.2
+             + (tl + tr + bl + br) * 0.05
+             - c;
+
+    float U = c.r;
+    float V = c.g;
+    float reaction = U * V * V;
+
+    float dU = u_Du * lap.r - reaction + u_feed * (1.0 - U);
+    float dV = u_Dv * lap.g + reaction - (u_feed + u_kill) * V;
+
+    float nU = clamp(U + dU * u_dt, 0.0, 1.0);
+    float nV = clamp(V + dV * u_dt, 0.0, 1.0);
+
+    outColor = vec4(nU, nV, 0.0, 1.0);
+  }`;
+
+  // ---- Render fragment shader: V -> thermal->verdant gradient ---
+  const FS_RENDER = `#version 300 es
+  precision highp float;
+  in vec2 v_uv;
+  out vec4 outColor;
+
+  uniform sampler2D u_state;
+  uniform vec2  u_texel;
+  uniform vec2  u_aspect;   // scale to keep sim square & centered in window
+
+  // Palette anchors (sRGB-ish, 0..1)
+  const vec3 BG       = vec3(0.039, 0.055, 0.043); // #0a0e0b near-black warm
+  const vec3 C_DEEP   = vec3(0.106, 0.302, 0.243); // #1b4d3e deep verdant
+  const vec3 C_VERD   = vec3(0.165, 0.616, 0.561); // #2a9d8f verdigris
+  const vec3 C_PHOS   = vec3(0.000, 1.000, 0.612); // #00ff9c phosphor
+  const vec3 C_GOLD   = vec3(0.831, 0.627, 0.090); // #d4a017 warm gold
+  const vec3 C_HOT    = vec3(1.000, 0.482, 0.000); // #ff7b00 amber
+  const vec3 C_HOTTER = vec3(1.000, 0.302, 0.000); // #ff4d00 hottest
+
+  // thermal -> verdant lerp across the gradient.
+  // t = 0  : settled / verdant (deep -> verdigris -> phosphor)
+  // t = 1  : active / hot (gold -> amber -> hottest)
+  vec3 thermalVerdant(float t) {
+    t = clamp(t, 0.0, 1.0);
+    vec3 col;
+    if (t < 0.18) {
+      col = mix(C_DEEP, C_VERD, smoothstep(0.0, 0.18, t));
+    } else if (t < 0.34) {
+      col = mix(C_VERD, C_PHOS, smoothstep(0.18, 0.34, t));
+    } else if (t < 0.55) {
+      col = mix(C_PHOS, C_GOLD, smoothstep(0.34, 0.55, t));
+    } else if (t < 0.78) {
+      col = mix(C_GOLD, C_HOT, smoothstep(0.55, 0.78, t));
+    } else {
+      col = mix(C_HOT, C_HOTTER, smoothstep(0.78, 1.0, t));
+    }
+    return col;
+  }
+
+  void main() {
+    // map window uv -> centered square sim coordinate
+    vec2 suv = (v_uv - 0.5) * u_aspect + 0.5;
+
+    // outside the square -> background
+    if (suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0) {
+      outColor = vec4(BG, 1.0);
+      return;
+    }
+
+    float V = texture(u_state, suv).g;
+
+    // Cheap bloom: sample neighbourhood of V and add a soft halo.
+    float halo = 0.0;
+    halo += texture(u_state, suv + vec2( 1.5, 0.0) * u_texel).g;
+    halo += texture(u_state, suv + vec2(-1.5, 0.0) * u_texel).g;
+    halo += texture(u_state, suv + vec2(0.0,  1.5) * u_texel).g;
+    halo += texture(u_state, suv + vec2(0.0, -1.5) * u_texel).g;
+    halo += texture(u_state, suv + vec2( 1.0,  1.0) * u_texel).g;
+    halo += texture(u_state, suv + vec2(-1.0, -1.0) * u_texel).g;
+    halo /= 6.0;
+
+    // Normalize V into a perceptual range. Gray-Scott V tends to sit ~0..0.45.
+    float t = smoothstep(0.04, 0.34, V);
+
+    // Edge / front detection: where V changes fast, push hotter (growing fronts).
+    float front = clamp((halo - V) * 6.0, -1.0, 1.0);
+    t = clamp(t + max(front, 0.0) * 0.25, 0.0, 1.0);
+
+    vec3 col = thermalVerdant(t);
+
+    // Fade very-low-V tissue into the warm-black background (the "void").
+    float presence = smoothstep(0.02, 0.12, V);
+    col = mix(BG, col, presence);
+
+    // Bloom add: glow proportional to activity, warm-biased.
+    float bloom = smoothstep(0.18, 0.45, halo);
+    col += thermalVerdant(min(t + 0.15, 1.0)) * bloom * 0.35;
+
+    // gentle filmic-ish tone curve + subtle contrast
+    col = col / (col + vec3(0.85)) * 1.85;
+    col = pow(col, vec3(0.92));
+
+    outColor = vec4(col, 1.0);
+  }`;
+
+  let simProg, renderProg;
+  try {
+    simProg    = program(VS, FS_SIM);
+    renderProg = program(VS, FS_RENDER);
+  } catch (e) {
+    fail(String(e.message || e));
+    return;
+  }
+
+  // Uniform locations
+  const L = {
+    sim: {
+      state: gl.getUniformLocation(simProg, "u_state"),
+      texel: gl.getUniformLocation(simProg, "u_texel"),
+      Du:    gl.getUniformLocation(simProg, "u_Du"),
+      Dv:    gl.getUniformLocation(simProg, "u_Dv"),
+      feed:  gl.getUniformLocation(simProg, "u_feed"),
+      kill:  gl.getUniformLocation(simProg, "u_kill"),
+      dt:    gl.getUniformLocation(simProg, "u_dt"),
+    },
+    render: {
+      state:  gl.getUniformLocation(renderProg, "u_state"),
+      texel:  gl.getUniformLocation(renderProg, "u_texel"),
+      aspect: gl.getUniformLocation(renderProg, "u_aspect"),
+    },
+  };
+
+  // ---- Ping-pong float textures + FBOs -------------------------
+  function makeTarget(size) {
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, size, size, 0, gl.RGBA, gl.HALF_FLOAT, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    const fbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if (status !== gl.FRAMEBUFFER_COMPLETE) {
+      // Fall back to full float if half-float not renderable.
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, size, size, 0, gl.RGBA, gl.FLOAT, null);
+    }
+    return { tex, fbo };
+  }
+
+  let a = makeTarget(SIM_SIZE);
+  let b = makeTarget(SIM_SIZE);
+
+  // ---- Seed the grid: U=1 everywhere, a few V spots in center --
+  function seed() {
+    const n = SIM_SIZE * SIM_SIZE;
+    const data = new Float32Array(n * 4);
+    for (let i = 0; i < n; i++) {
+      data[i*4 + 0] = 1.0; // U
+      data[i*4 + 1] = 0.0; // V
+      data[i*4 + 2] = 0.0;
+      data[i*4 + 3] = 1.0;
+    }
+
+    // A small cluster of seed spots near the center -> organic growth.
+    const cx = SIM_SIZE / 2;
+    const cy = SIM_SIZE / 2;
+    const spots = [
+      [0, 0, 9],
+      [-22, 14, 6],
+      [20, -18, 6],
+      [16, 22, 5],
+      [-18, -20, 5],
+    ];
+    for (const [ox, oy, rad] of spots) {
+      const sx = cx + ox, sy = cy + oy;
+      for (let y = -rad; y <= rad; y++) {
+        for (let x = -rad; x <= rad; x++) {
+          if (x*x + y*y > rad*rad) continue;
+          const px = Math.round(sx + x);
+          const py = Math.round(sy + y);
+          if (px < 0 || px >= SIM_SIZE || py < 0 || py >= SIM_SIZE) continue;
+          const idx = (py * SIM_SIZE + px) * 4;
+          data[idx + 0] = 0.5;  // U knocked down
+          data[idx + 1] = 0.92; // V planted
+        }
+      }
+    }
+
+    // Upload seed into texture A (needs full-float for texImage upload path)
+    gl.bindTexture(gl.TEXTURE_2D, a.tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, SIM_SIZE, SIM_SIZE, 0, gl.RGBA, gl.FLOAT, data);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  }
+  seed();
+
+  // A no-vertex-buffer VAO (full-screen triangle uses gl_VertexID)
+  const vao = gl.createVertexArray();
+
+  // ---- Canvas sizing (devicePixelRatio aware) ------------------
+  let viewW = 0, viewH = 0;
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    viewW = Math.floor(window.innerWidth  * dpr);
+    viewH = Math.floor(window.innerHeight * dpr);
+    canvas.width  = viewW;
+    canvas.height = viewH;
+  }
+  window.addEventListener("resize", resize);
+  resize();
+
+  // ---- Simulation step (renders into ping-pong target) ---------
+  const texel = 1.0 / SIM_SIZE;
+
+  function stepSim(feed, kill) {
+    gl.useProgram(simProg);
+    gl.bindVertexArray(vao);
+    gl.viewport(0, 0, SIM_SIZE, SIM_SIZE);
+
+    gl.uniform2f(L.sim.texel, texel, texel);
+    gl.uniform1f(L.sim.Du, Du);
+    gl.uniform1f(L.sim.Dv, Dv);
+    gl.uniform1f(L.sim.feed, feed);
+    gl.uniform1f(L.sim.kill, kill);
+    gl.uniform1f(L.sim.dt, DT);
+    gl.uniform1i(L.sim.state, 0);
+
+    // read from a, write into b
+    gl.bindFramebuffer(gl.FRAMEBUFFER, b.fbo);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, a.tex);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    // swap
+    const tmp = a; a = b; b = tmp;
+  }
+
+  // ---- Render pass (sim texture -> screen) ---------------------
+  function renderToScreen() {
+    gl.useProgram(renderProg);
+    gl.bindVertexArray(vao);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, viewW, viewH);
+
+    // Aspect: keep the square sim centered & fully visible (contain).
+    const winAspect = viewW / viewH;
+    let ax = 1.0, ay = 1.0;
+    if (winAspect > 1.0) ax = winAspect;   // wide window -> stretch x domain
+    else                 ay = 1.0 / winAspect;
+
+    gl.uniform2f(L.render.aspect, ax, ay);
+    gl.uniform2f(L.render.texel, texel, texel);
+    gl.uniform1i(L.render.state, 0);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, a.tex);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  // ---- Readout / overlay wiring --------------------------------
+  const el = {
+    feed:   document.getElementById("r-feed"),
+    kill:   document.getElementById("r-kill"),
+    iter:   document.getElementById("r-iter"),
+    active: document.getElementById("r-active"),
+    mass:   document.getElementById("r-mass"),
+    fps:    document.getElementById("r-fps"),
+  };
+
+  // Estimate active fraction occasionally by reading back a small mip-less
+  // sample grid (cheap: sample a sparse set of pixels from the float FBO).
+  const SAMPLE = 32; // 32x32 readback grid
+  const sampleBuf = new Float32Array(SAMPLE * SAMPLE * 4);
+  function measureActive() {
+    // Render current state into a tiny readback by sampling FBO 'a'.
+    gl.bindFramebuffer(gl.FRAMEBUFFER, a.fbo);
+    // readPixels supports FLOAT here because color-buffer-float is enabled.
+    // We read a SAMPLE x SAMPLE block scaled across the grid using viewport trick:
+    // simplest robust approach -> read the whole-ish region at low stride is not
+    // available, so read a centered SAMPLE block (representative of the tissue).
+    const ox = (SIM_SIZE - SAMPLE) >> 1;
+    const oy = (SIM_SIZE - SAMPLE) >> 1;
+    try {
+      gl.readPixels(ox, oy, SAMPLE, SAMPLE, gl.RGBA, gl.FLOAT, sampleBuf);
+    } catch (e) {
+      return -1;
+    }
+    let active = 0;
+    const total = SAMPLE * SAMPLE;
+    for (let i = 0; i < total; i++) {
+      if (sampleBuf[i*4 + 1] > 0.12) active++; // V above threshold = active tissue
+    }
+    return active / total;
+  }
+
+  // ---- Main animation loop -------------------------------------
+  let iter = 0;
+  let lastT = performance.now();
+  let fpsAccum = 0, fpsFrames = 0, fpsDisplay = 0;
+  let activeFrac = 0;
+  let measureClock = 0;
+
+  function frame(now) {
+    const dtMs = now - lastT;
+    lastT = now;
+
+    // ---- slow f/k drift so the texture keeps evolving ----------
+    const phase = now * DRIFT_SPEED;
+    const feed = FEED_BASE + Math.sin(phase) * DRIFT_F;
+    const kill = KILL_BASE + Math.cos(phase * 0.73) * DRIFT_K;
+
+    // run several solver steps for smooth growth
+    for (let s = 0; s < STEPS_PER_FRAME; s++) {
+      stepSim(feed, kill);
+      iter++;
+    }
+
+    renderToScreen();
+
+    // ---- overlay stats (throttled) -----------------------------
+    fpsAccum += dtMs; fpsFrames++;
+    if (fpsAccum >= 500) {
+      fpsDisplay = Math.round((fpsFrames * 1000) / fpsAccum);
+      fpsAccum = 0; fpsFrames = 0;
+    }
+
+    measureClock += dtMs;
+    if (measureClock >= 350) {
+      measureClock = 0;
+      const m = measureActive();
+      if (m >= 0) activeFrac = m;
+      el.feed.textContent   = feed.toFixed(4);
+      el.kill.textContent   = kill.toFixed(4);
+      el.iter.textContent   = iter.toLocaleString();
+      el.active.textContent = (activeFrac * 100).toFixed(1) + "%";
+      el.fps.textContent    = fpsDisplay > 0 ? fpsDisplay : "--";
+
+      // "MASS" status — steady unless the system collapses or floods.
+      let mass = "STEADY";
+      if (activeFrac < 0.015)      mass = "DECAYING";
+      else if (activeFrac > 0.93)  mass = "FLOODING";
+      el.mass.textContent = mass;
+    }
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // ---- Failure fallback ----------------------------------------
+  function fail(msg) {
+    const c = document.getElementById("sim");
+    if (c) c.style.display = "none";
+    const tag = document.getElementById("renderer-tag");
+    if (tag) tag.textContent = "RENDERER OFFLINE";
+    const cap = document.querySelector(".titlebar .caption");
+    if (cap) cap.textContent = "ERROR: " + msg;
+    console.error("[EQUILIBRIA 02]", msg);
+  }
+
+  // ============================================================
+  //  CANVAS2D CPU FALLBACK
+  //  Activated ONLY when the WebGL2 GPU path is unavailable.
+  //  A pure-CPU Gray-Scott solver on a modest grid, scaled up to
+  //  fill the window. Reuses the same physics constants and the
+  //  same thermal->verdant palette as the WebGL renderer so the
+  //  piece looks like itself, just softer/CPU-bound.
+  // ============================================================
+  function startCanvas2DFallback() {
+    // The primary canvas may already hold a (failed) WebGL context, in which
+    // case it cannot also vend a 2D context — swap in a fresh canvas if so.
+    let c = canvas;
+    let ctx = c.getContext("2d");
+    if (!ctx) {
+      const fresh = document.createElement("canvas");
+      fresh.id = "sim";
+      c.id = "";
+      c.style.display = "none";
+      if (c.parentNode) c.parentNode.insertBefore(fresh, c);
+      c = fresh;
+      ctx = c.getContext("2d");
+    }
+    if (!ctx) { fail("Canvas2D unavailable."); return; }
+
+    // Overlay: this is a clean fallback, NOT an error — no error styling.
+    const tag = document.getElementById("renderer-tag");
+    if (tag) tag.textContent = "RENDERER: CANVAS2D (CPU FALLBACK)";
+
+    // ---- CPU sim configuration -------------------------------
+    const GRID  = 160;   // square CPU grid — small enough to run ~30fps on CPU
+    const STEPS = 8;     // solver steps per displayed frame
+    const N     = GRID * GRID;
+
+    // CPU-LOCAL physics (independent of the GPU path's constants): the shared
+    // Du/Dv/feed/kill are tuned for the 320^2 GPU grid and let the seed die on
+    // this 160^2 grid. These are Karl Sims' canonical "coral" parameters, the
+    // most reliably-alive Gray-Scott preset for an explicit Euler solver with
+    // the (center -1 / ortho 0.2 / diag 0.05) Laplacian kernel used below.
+    const FB_DU = 1.0, FB_DV = 0.5, FB_DT = 1.0;
+    const FB_FEED = 0.0545, FB_KILL = 0.0620;   // coral / mitosis regime
+    const FB_DRIFT_F = 0.0010, FB_DRIFT_K = 0.0007; // small: stay inside the live regime
+
+    // Two chemicals, double-buffered: read from U/V, write into U2/V2, swap.
+    let U  = new Float32Array(N);
+    let V  = new Float32Array(N);
+    let U2 = new Float32Array(N);
+    let V2 = new Float32Array(N);
+
+    // ---- Seed: U=1 everywhere, a cluster of V spots in the center
+    function seedCPU() {
+      for (let i = 0; i < N; i++) { U[i] = 1.0; V[i] = 0.0; }
+      const cx = GRID >> 1, cy = GRID >> 1;
+      const spots = [
+        [0,    0,  6],
+        [-11,  7,  4],
+        [10,  -9,  4],
+        [8,   11,  3],
+        [-9, -10,  3],
+      ];
+      for (const [ox, oy, rad] of spots) {
+        const sx = cx + ox, sy = cy + oy;
+        for (let y = -rad; y <= rad; y++) {
+          for (let x = -rad; x <= rad; x++) {
+            if (x*x + y*y > rad*rad) continue;
+            const px = sx + x, py = sy + y;
+            if (px < 0 || px >= GRID || py < 0 || py >= GRID) continue;
+            const idx = py * GRID + px;
+            U[idx] = 0.5;   // U knocked down
+            V[idx] = 0.92;  // V planted
+          }
+        }
+      }
+    }
+    seedCPU();
+
+    // ---- Gray-Scott update (toroidal wrap, weighted 9-pt Laplacian) ----
+    //  Reuses the file's Du / Dv / DT constants for identical physics.
+    function stepCPU(feed, kill) {
+      for (let y = 0; y < GRID; y++) {
+        const yu = (y - 1 + GRID) % GRID;
+        const yd = (y + 1) % GRID;
+        const row = y * GRID, rowU = yu * GRID, rowD = yd * GRID;
+        for (let x = 0; x < GRID; x++) {
+          const xl = (x - 1 + GRID) % GRID;
+          const xr = (x + 1) % GRID;
+          const i  = row + x;
+          const uC = U[i], vC = V[i];
+
+          // ortho weight 0.2, diagonal 0.05, center -1.0  (matches the shader)
+          const lapU =
+            (U[row+xl] + U[row+xr] + U[rowU+x] + U[rowD+x]) * 0.2 +
+            (U[rowU+xl] + U[rowU+xr] + U[rowD+xl] + U[rowD+xr]) * 0.05 - uC;
+          const lapV =
+            (V[row+xl] + V[row+xr] + V[rowU+x] + V[rowD+x]) * 0.2 +
+            (V[rowU+xl] + V[rowU+xr] + V[rowD+xl] + V[rowD+xr]) * 0.05 - vC;
+
+          const reaction = uC * vC * vC;
+          let nU = uC + (FB_DU * lapU - reaction + feed * (1.0 - uC)) * FB_DT;
+          let nV = vC + (FB_DV * lapV + reaction - (feed + kill) * vC) * FB_DT;
+          U2[i] = nU < 0 ? 0 : nU > 1 ? 1 : nU;
+          V2[i] = nV < 0 ? 0 : nV > 1 ? 1 : nV;
+        }
+      }
+      let t;
+      t = U; U = U2; U2 = t;
+      t = V; V = V2; V2 = t;
+    }
+
+    // ---- Palette (mirrors the GLSL thermalVerdant in this file) --------
+    const BG_C       = [0.039, 0.055, 0.043]; // #0a0e0b
+    const C_DEEP_C   = [0.106, 0.302, 0.243]; // #1b4d3e
+    const C_VERD_C   = [0.165, 0.616, 0.561]; // #2a9d8f
+    const C_PHOS_C   = [0.000, 1.000, 0.612]; // #00ff9c
+    const C_GOLD_C   = [0.831, 0.627, 0.090]; // #d4a017
+    const C_HOT_C    = [1.000, 0.482, 0.000]; // #ff7b00
+    const C_HOTTER_C = [1.000, 0.302, 0.000]; // #ff4d00
+
+    function smoothstep(e0, e1, x) {
+      let t = (x - e0) / (e1 - e0);
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      return t * t * (3 - 2 * t);
+    }
+    function mix3(p, q, m, out) {
+      out[0] = p[0] + (q[0] - p[0]) * m;
+      out[1] = p[1] + (q[1] - p[1]) * m;
+      out[2] = p[2] + (q[2] - p[2]) * m;
+      return out;
+    }
+    function thermalVerdant(t, out) {
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      if (t < 0.18)      mix3(C_DEEP_C, C_VERD_C, smoothstep(0.0,  0.18, t), out);
+      else if (t < 0.34) mix3(C_VERD_C, C_PHOS_C, smoothstep(0.18, 0.34, t), out);
+      else if (t < 0.55) mix3(C_PHOS_C, C_GOLD_C, smoothstep(0.34, 0.55, t), out);
+      else if (t < 0.78) mix3(C_GOLD_C, C_HOT_C,  smoothstep(0.55, 0.78, t), out);
+      else               mix3(C_HOT_C,  C_HOTTER_C, smoothstep(0.78, 1.0, t), out);
+      return out;
+    }
+
+    // ---- Offscreen grid -> ImageData; blitted scaled-up to the window --
+    const off    = document.createElement("canvas");
+    off.width    = GRID;
+    off.height   = GRID;
+    const offCtx = off.getContext("2d");
+    const img    = offCtx.createImageData(GRID, GRID);
+    const pix    = img.data;
+    const _col   = [0, 0, 0];
+    const _col2  = [0, 0, 0];
+
+    function paint() {
+      for (let y = 0; y < GRID; y++) {
+        const yu = (y - 1 + GRID) % GRID;
+        const yd = (y + 1) % GRID;
+        const row = y * GRID, rowU = yu * GRID, rowD = yd * GRID;
+        for (let x = 0; x < GRID; x++) {
+          const xl = (x - 1 + GRID) % GRID;
+          const xr = (x + 1) % GRID;
+          const i  = row + x;
+          const v  = V[i];
+
+          // soft halo for bloom + front detection (matches render shader intent)
+          const halo = (V[row+xr] + V[row+xl] + V[rowU+x] + V[rowD+x] +
+                        V[rowU+xr] + V[rowD+xl]) / 6.0;
+
+          let t = smoothstep(0.04, 0.34, v);
+          let front = (halo - v) * 6.0;
+          front = front < -1 ? -1 : front > 1 ? 1 : front;
+          t += (front > 0 ? front : 0) * 0.25;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+
+          thermalVerdant(t, _col);
+
+          // fade very-low-V tissue into the warm-black "void"
+          const presence = smoothstep(0.02, 0.12, v);
+          _col[0] = BG_C[0] + (_col[0] - BG_C[0]) * presence;
+          _col[1] = BG_C[1] + (_col[1] - BG_C[1]) * presence;
+          _col[2] = BG_C[2] + (_col[2] - BG_C[2]) * presence;
+
+          // warm-biased bloom add
+          const bloom = smoothstep(0.18, 0.45, halo);
+          thermalVerdant(t + 0.15 > 1 ? 1 : t + 0.15, _col2);
+          _col[0] += _col2[0] * bloom * 0.35;
+          _col[1] += _col2[1] * bloom * 0.35;
+          _col[2] += _col2[2] * bloom * 0.35;
+
+          // gentle filmic-ish tone curve + gamma (matches shader tail)
+          let r  = _col[0] / (_col[0] + 0.85) * 1.85;
+          let g  = _col[1] / (_col[1] + 0.85) * 1.85;
+          let bb = _col[2] / (_col[2] + 0.85) * 1.85;
+          r  = Math.pow(r  < 0 ? 0 : r,  0.92);
+          g  = Math.pow(g  < 0 ? 0 : g,  0.92);
+          bb = Math.pow(bb < 0 ? 0 : bb, 0.92);
+
+          const p = i * 4;
+          pix[p]   = r  > 1 ? 255 : r  * 255;
+          pix[p+1] = g  > 1 ? 255 : g  * 255;
+          pix[p+2] = bb > 1 ? 255 : bb * 255;
+          pix[p+3] = 255;
+        }
+      }
+      offCtx.putImageData(img, 0, 0);
+    }
+
+    // ---- Canvas sizing (devicePixelRatio aware) ----------------------
+    let vw = 0, vh = 0;
+    function resizeCPU() {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      vw = Math.floor(window.innerWidth  * dpr);
+      vh = Math.floor(window.innerHeight * dpr);
+      c.width  = vw;
+      c.height = vh;
+      c.style.display = "block";
+      // smoothing gives the small grid an organic, membrane-like look scaled up
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+    }
+    window.addEventListener("resize", resizeCPU);
+    resizeCPU();
+
+    function drawCPU() {
+      // background fill, then the square sim centered ("contain") to match GPU path
+      ctx.fillStyle = "#0a0e0b";
+      ctx.fillRect(0, 0, vw, vh);
+      const side = Math.min(vw, vh);
+      const dx = (vw - side) / 2, dy = (vh - side) / 2;
+      ctx.drawImage(off, 0, 0, GRID, GRID, dx, dy, side, side);
+    }
+
+    // ---- Overlay wiring (same readout ids as the WebGL path) ----------
+    const elc = {
+      feed:   document.getElementById("r-feed"),
+      kill:   document.getElementById("r-kill"),
+      iter:   document.getElementById("r-iter"),
+      active: document.getElementById("r-active"),
+      mass:   document.getElementById("r-mass"),
+      fps:    document.getElementById("r-fps"),
+    };
+
+    function measureActiveCPU() {
+      let active = 0;
+      for (let i = 0; i < N; i++) if (V[i] > 0.12) active++;
+      return active / N;
+    }
+
+    // ---- Main animation loop -----------------------------------------
+    let iterC = 0;
+    let lastC = performance.now();
+    let fpsAccumC = 0, fpsFramesC = 0, fpsDisplayC = 0;
+    let activeFracC = 0;
+    let measureClockC = 0;
+
+    function frameCPU(now) {
+      const dtMs = now - lastC;
+      lastC = now;
+
+      // slow f/k drift so the texture keeps evolving (reuses file constants)
+      const phase = now * DRIFT_SPEED;
+      const feed = FB_FEED + Math.sin(phase) * FB_DRIFT_F;
+      const kill = FB_KILL + Math.cos(phase * 0.73) * FB_DRIFT_K;
+
+      for (let s = 0; s < STEPS; s++) { stepCPU(feed, kill); iterC++; }
+
+      paint();
+      drawCPU();
+
+      fpsAccumC += dtMs; fpsFramesC++;
+      if (fpsAccumC >= 500) {
+        fpsDisplayC = Math.round((fpsFramesC * 1000) / fpsAccumC);
+        fpsAccumC = 0; fpsFramesC = 0;
+      }
+
+      measureClockC += dtMs;
+      if (measureClockC >= 350) {
+        measureClockC = 0;
+        activeFracC = measureActiveCPU();
+        if (elc.feed)   elc.feed.textContent   = feed.toFixed(4);
+        if (elc.kill)   elc.kill.textContent   = kill.toFixed(4);
+        if (elc.iter)   elc.iter.textContent   = iterC.toLocaleString();
+        if (elc.active) elc.active.textContent = (activeFracC * 100).toFixed(1) + "%";
+        if (elc.fps)    elc.fps.textContent    = fpsDisplayC > 0 ? fpsDisplayC : "--";
+
+        let mass = "STEADY";
+        if (activeFracC < 0.015)     mass = "DECAYING";
+        else if (activeFracC > 0.93) mass = "FLOODING";
+        if (elc.mass) elc.mass.textContent = mass;
+      }
+
+      requestAnimationFrame(frameCPU);
+    }
+    requestAnimationFrame(frameCPU);
+  }
+
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>EQUILIBRIA · 03 — SOCIETAL HOMEOSTAT</title>
+<style>
+  /* ============================================================
+     EQUILIBRIA — shared aesthetic system
+     "cyberdeck meets solarpunk / thermodynamic equilibrium"
+     Piece 03: SOCIETAL HOMEOSTAT
+     ============================================================ */
+  :root {
+    --bg: #0a0e0b;
+    --phosphor: #00ff9c;
+    --amber: #ff7b00;
+    --gold: #d4a017;
+    --verdigris: #2a9d8f;
+    --ink: #0a0e0b;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); }
+  body {
+    font-family: 'IBM Plex Mono', 'SF Mono', ui-monospace, 'Menlo', monospace;
+    color: var(--phosphor);
+  }
+  #stage { position: fixed; inset: 0; }
+  canvas { display: block; width: 100%; height: 100%; }
+
+  /* ---- Terminal overlay (HTML chrome over the canvas) ---- */
+  .overlay { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+
+  .titlebar {
+    position: absolute; top: 0; left: 0; right: 0;
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 14px 20px 10px;
+    border-bottom: 1px solid rgba(0, 255, 156, 0.14);
+    background: linear-gradient(180deg, rgba(10,14,11,0.78), rgba(10,14,11,0.0));
+  }
+  .titlebar .brand {
+    font-size: 12px; letter-spacing: 0.32em; text-transform: uppercase;
+    color: var(--phosphor); text-shadow: 0 0 8px rgba(0,255,156,0.45);
+  }
+  .titlebar .brand .seq { color: var(--amber); text-shadow: 0 0 8px rgba(255,123,0,0.5); }
+  .titlebar .caption {
+    font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: rgba(212,160,23,0.85); text-align: right; max-width: 52%;
+  }
+
+  .readouts {
+    position: absolute; top: 56px; left: 20px;
+    font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase;
+    line-height: 1.85;
+  }
+  .readouts .row { display: flex; gap: 8px; }
+  .readouts .k { color: rgba(0,255,156,0.5); min-width: 92px; }
+  .readouts .v { color: var(--phosphor); text-shadow: 0 0 6px rgba(0,255,156,0.35); }
+  .readouts .v.warn { color: var(--amber); text-shadow: 0 0 6px rgba(255,123,0,0.5); }
+
+  .footer {
+    position: absolute; bottom: 10px; left: 20px; right: 20px;
+    display: flex; justify-content: space-between;
+    font-size: 9.5px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: rgba(42,157,143,0.7);
+  }
+
+  /* ---- CRT scanlines + vignette ---- */
+  .crt {
+    position: fixed; inset: 0; z-index: 8; pointer-events: none;
+    background:
+      repeating-linear-gradient(
+        0deg,
+        rgba(0,0,0,0.0) 0px,
+        rgba(0,0,0,0.0) 2px,
+        rgba(0,0,0,0.16) 3px,
+        rgba(0,0,0,0.0) 4px
+      );
+    mix-blend-mode: multiply;
+  }
+  .vignette {
+    position: fixed; inset: 0; z-index: 7; pointer-events: none;
+    background: radial-gradient(ellipse at center,
+      rgba(0,0,0,0) 52%, rgba(0,0,0,0.45) 100%);
+  }
+  .flicker { animation: flick 5.5s infinite steps(40); }
+  @keyframes flick { 0%,97%,100%{opacity:1;} 98%{opacity:0.94;} 99%{opacity:0.99;} }
+</style>
+</head>
+<body>
+  <div id="stage">
+    <canvas id="c"></canvas>
+  </div>
+
+  <div class="overlay flicker">
+    <div class="titlebar">
+      <div class="brand">EQUILIBRIA <span class="seq">// 03</span> · SOCIETAL HOMEOSTAT</div>
+      <div class="caption">a coalition rendered as a thermostat — negative feedback holds four reservoirs near a shared setpoint</div>
+    </div>
+    <div class="readouts">
+      <div class="row"><span class="k">SETPOINT</span><span class="v" id="r-setpoint">—</span></div>
+      <div class="row"><span class="k">MAX ERROR</span><span class="v" id="r-error">—</span></div>
+      <div class="row"><span class="k">FLOWS</span><span class="v" id="r-flows">CONSERVED</span></div>
+      <div class="row"><span class="k">STATE</span><span class="v" id="r-state">—</span></div>
+      <div class="row"><span class="k">TICK</span><span class="v" id="r-tick">0</span></div>
+    </div>
+    <div class="footer">
+      <span>NEG-FEEDBACK · DAMPED · CONSERVED-FLOW</span>
+      <span id="r-total">Σ = —</span>
+    </div>
+  </div>
+
+  <div class="vignette"></div>
+  <div class="crt"></div>
+
+<script>
+"use strict";
+/* ============================================================
+   EQUILIBRIA 03 — SOCIETAL HOMEOSTAT
+   Pure vanilla JS + Canvas2D. No deps, runs offline.
+
+   MODEL
+   -----
+   Four reservoirs: TECH, CAPITAL, POLITY, WELFARE.
+   Each holds a level L_i. Total Σ L_i is CONSERVED.
+   Coupled difference equations push every level toward a shared
+   setpoint (= total / 4) via negative feedback along channels,
+   with small random perturbations so it perpetually self-corrects.
+   ============================================================ */
+
+// ----- Palette / thermal->verdant lerp ------------------------
+const COL = {
+  bg:        [10, 14, 11],
+  hottest:   [255, 77, 0],    // t=1.0 max stress
+  hot:       [255, 123, 0],   // t~0.85 amber
+  gold:      [212, 160, 23],  // t~0.5 balanced
+  verdigris: [42, 157, 143],  // t~0.18 cooling
+  deep:      [27, 77, 62],    // t~0.05 deep green
+  phosphor:  [0, 255, 156],   // accent
+};
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+function clamp(x, lo, hi) { return x < lo ? lo : x > hi ? hi : x; }
+function lerp3(c1, c2, t) {
+  return [lerp(c1[0],c2[0],t), lerp(c1[1],c2[1],t), lerp(c1[2],c2[2],t)];
+}
+
+// Map t in [0,1] (0=cool/healthy/verdant, 1=hot/stress/amber) to RGB.
+function thermal(t) {
+  t = clamp(t, 0, 1);
+  let c;
+  if (t < 0.25)      c = lerp3(COL.deep,      COL.verdigris, t / 0.25);
+  else if (t < 0.5)  c = lerp3(COL.verdigris, COL.gold,      (t - 0.25) / 0.25);
+  else if (t < 0.8)  c = lerp3(COL.gold,      COL.hot,       (t - 0.5) / 0.3);
+  else               c = lerp3(COL.hot,       COL.hottest,   (t - 0.8) / 0.2);
+  return c;
+}
+function rgba(c, a) { return `rgba(${c[0]|0},${c[1]|0},${c[2]|0},${a})`; }
+
+// ----- Canvas setup -------------------------------------------
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W = 0, H = 0, DPR = 1;
+
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width  = Math.floor(W * DPR);
+  canvas.height = Math.floor(H * DPR);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  layout();
+}
+window.addEventListener('resize', resize);
+
+// ----- Reservoir definitions ----------------------------------
+const NAMES = ['TECH', 'CAPITAL', 'POLITY', 'WELFARE'];
+const N = NAMES.length;
+
+// Coupling graph: a ring (each node connects to neighbours) plus
+// the two diagonals — a fully coupled 4-clique for richer flows.
+const EDGES = [
+  [0,1],[1,2],[2,3],[3,0], // ring
+  [0,2],[1,3],             // diagonals
+];
+
+// ----- Tuning knobs (the homeostat's "personality") -----------
+const CFG = {
+  GAIN:        0.085,  // proportional pull toward setpoint (per edge)
+  DAMP:        0.86,   // velocity retention (momentum); <1 dissipates
+  NOISE:       0.011,  // perturbation magnitude (keeps it alive)
+  KICK_EVERY:  260,    // ticks between larger scheduled shocks
+  KICK_SIZE:   0.22,   // magnitude of a scheduled shock
+  TOTAL:       1.0,    // conserved total resource (Σ L_i)
+};
+const SETPOINT = CFG.TOTAL / N; // shared target level for every reservoir
+
+// ----- State (recomputed immutably each tick) -----------------
+function initState() {
+  // Start away from equilibrium so the recovery is visible.
+  let levels = [0.46, 0.30, 0.14, 0.10]; // sums to TOTAL
+  return {
+    tick: 0,
+    levels,                 // L_i
+    vel: new Array(N).fill(0), // dL_i/dt accumulator (for damping)
+    flows: EDGES.map(() => 0), // signed flow per edge (i->j positive)
+    history: [],            // strip-chart ring buffer of level snapshots
+  };
+}
+let S = initState();
+
+// Deterministic-ish small noise (we allow Math.random; it's art).
+function noise() { return (Math.random() * 2 - 1) * CFG.NOISE; }
+
+// Renormalize to enforce exact conservation against float drift.
+function conserve(levels) {
+  let sum = 0; for (let i = 0; i < N; i++) sum += levels[i];
+  const k = CFG.TOTAL / sum;
+  const out = new Array(N);
+  for (let i = 0; i < N; i++) out[i] = levels[i] * k;
+  return out;
+}
+
+// One physics tick -> returns a NEW state object (immutable-friendly).
+function step(prev) {
+  const tick = prev.tick + 1;
+  const L = prev.levels;
+  const flows = new Array(EDGES.length).fill(0);
+  // Net resource delta per node from edge flows.
+  const delta = new Array(N).fill(0);
+
+  // For each channel, drive flow proportional to the *difference in
+  // deviation from setpoint* between its two nodes. Resource moves
+  // from the node that is further above setpoint to the one below:
+  // this is the negative-feedback corrective flow.
+  for (let e = 0; e < EDGES.length; e++) {
+    const [i, j] = EDGES[e];
+    const devI = L[i] - SETPOINT;
+    const devJ = L[j] - SETPOINT;
+    // Flow i->j positive when i is "hotter" (higher) than j.
+    const f = CFG.GAIN * (devI - devJ) * 0.5;
+    flows[e] = f;
+    delta[i] -= f; // i gives
+    delta[j] += f; // j receives
+  }
+
+  // Integrate with damping (momentum) + perturbation.
+  const vel = new Array(N);
+  let levels = new Array(N);
+  for (let i = 0; i < N; i++) {
+    vel[i] = prev.vel[i] * CFG.DAMP + delta[i];
+    levels[i] = L[i] + vel[i] + noise();
+    if (levels[i] < 0.001) levels[i] = 0.001; // floor (no negative reservoirs)
+  }
+
+  // Scheduled shock: dump resource into one reservoir, pull from another,
+  // keeping the sum constant — the system must visibly re-balance.
+  if (tick % CFG.KICK_EVERY === 0) {
+    const a = (Math.random() * N) | 0;
+    let b = (Math.random() * N) | 0;
+    if (b === a) b = (b + 1) % N;
+    const amt = CFG.KICK_SIZE * (0.6 + Math.random() * 0.4);
+    levels[a] += amt;
+    levels[b] = Math.max(0.001, levels[b] - amt);
+  }
+
+  // Enforce exact conservation.
+  levels = conserve(levels);
+
+  // Strip-chart history.
+  const history = prev.history.slice(-HIST_MAX + 1);
+  history.push(levels.slice());
+
+  return { tick, levels, vel, flows, history };
+}
+
+// ----- Layout (reservoir positions) ---------------------------
+const HIST_MAX = 480;
+let nodes = []; // {x,y,r}
+let centerX = 0, centerY = 0, ringR = 0;
+let chart = { x: 0, y: 0, w: 0, h: 0 };
+
+function layout() {
+  centerX = W * 0.5;
+  centerY = H * 0.46;
+  ringR = Math.min(W, H) * 0.27;
+  const nodeR = clamp(Math.min(W, H) * 0.085, 42, 120);
+  nodes = [];
+  // Place four reservoirs on a ring, starting top, clockwise.
+  for (let i = 0; i < N; i++) {
+    const ang = -Math.PI / 2 + i * (Math.PI * 2 / N);
+    nodes.push({
+      x: centerX + Math.cos(ang) * ringR,
+      y: centerY + Math.sin(ang) * ringR,
+      r: nodeR,
+      ang,
+    });
+  }
+  // Strip chart along the bottom.
+  const margin = 20;
+  chart.h = clamp(H * 0.12, 70, 150);
+  chart.w = W - margin * 2;
+  chart.x = margin;
+  chart.y = H - chart.h - 34;
+}
+
+// ----- Rendering ----------------------------------------------
+function drawBackground() {
+  ctx.fillStyle = rgba(COL.bg, 1);
+  ctx.fillRect(0, 0, W, H);
+  // Faint warm radial glow at center.
+  const g = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, ringR * 2.2);
+  g.addColorStop(0, 'rgba(42,157,143,0.06)');
+  g.addColorStop(1, 'rgba(10,14,11,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+}
+
+// Channel between two nodes: thickness = |flow|, color = thermal by
+// magnitude, moving dashes show direction.
+function drawChannel(e, time) {
+  const [i, j] = EDGES[e];
+  const a = nodes[i], b = nodes[j];
+  const f = S.flows[e];
+  const mag = Math.abs(f);
+  // Normalize flow magnitude to a temperature. Settled flows -> verdant,
+  // large corrective flows -> hot amber.
+  const t = clamp(mag / 0.05, 0, 1);
+  const col = thermal(0.12 + t * 0.85);
+
+  // Geometry: edge from rim to rim.
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  const ax = a.x + ux * a.r, ay = a.y + uy * a.r;
+  const bx = b.x - ux * b.r, by = b.y - uy * b.r;
+
+  const thick = clamp(2 + mag * 220, 2, 26);
+
+  // Base channel (soft glow).
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = rgba(col, 0.10 + t * 0.18);
+  ctx.lineWidth = thick + 8;
+  ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+
+  // Core channel.
+  ctx.strokeStyle = rgba(col, 0.55 + t * 0.4);
+  ctx.lineWidth = thick;
+  ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+
+  // Direction: moving dashes. Sign of f sets travel direction.
+  if (mag > 0.0006) {
+    const dir = f >= 0 ? 1 : -1; // i->j when positive
+    const speed = clamp(mag * 800, 0.4, 6);
+    const phase = (time * speed * dir) % 1;
+    ctx.save();
+    ctx.setLineDash([6, 14]);
+    ctx.lineDashOffset = -phase * 20 - time * speed * 20 * dir;
+    ctx.strokeStyle = rgba(thermal(0.5 + t * 0.5), 0.85);
+    ctx.lineWidth = clamp(thick * 0.4, 1.2, 8);
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+    ctx.restore();
+    ctx.setLineDash([]);
+
+    // Flowing particles for extra life.
+    const np = Math.max(2, Math.round(len / 60));
+    for (let p = 0; p < np; p++) {
+      let u = ((p / np) + (time * speed * 0.06 * dir)) % 1;
+      if (u < 0) u += 1;
+      const px = ax + (bx - ax) * u;
+      const py = ay + (by - ay) * u;
+      const pr = clamp(thick * 0.22, 1.2, 4);
+      ctx.fillStyle = rgba(thermal(0.6 + t * 0.4), 0.9);
+      ctx.beginPath(); ctx.arc(px, py, pr, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+}
+
+// Reservoir: tank with animated fill level; color by deviation.
+function drawReservoir(i, time) {
+  const n = nodes[i];
+  const L = S.levels[i];
+  const dev = L - SETPOINT;
+  // Deviation -> temperature. At setpoint -> verdant; above -> amber.
+  // Map relative deviation: +SETPOINT over -> very hot; below -> cool.
+  const tdev = clamp(0.5 + dev / (SETPOINT * 1.5), 0, 1);
+  const col = thermal(tdev);
+
+  // Fill fraction within the tank disk (relative to a sensible scale).
+  const fillFrac = clamp(L / (SETPOINT * 2), 0.04, 1);
+
+  ctx.save();
+  // Outer ring glow.
+  ctx.shadowBlur = 24;
+  ctx.shadowColor = rgba(col, 0.55);
+  ctx.strokeStyle = rgba(col, 0.85);
+  ctx.lineWidth = 2.2;
+  ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2); ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Tank interior — clip to disk, draw fill from bottom.
+  ctx.save();
+  ctx.beginPath(); ctx.arc(n.x, n.y, n.r - 2, 0, Math.PI * 2); ctx.clip();
+  // Dark interior.
+  ctx.fillStyle = 'rgba(8,12,9,0.92)';
+  ctx.fillRect(n.x - n.r, n.y - n.r, n.r * 2, n.r * 2);
+  // Liquid level.
+  const liquidTop = n.y + n.r - fillFrac * n.r * 2;
+  const lg = ctx.createLinearGradient(0, liquidTop, 0, n.y + n.r);
+  lg.addColorStop(0, rgba(col, 0.95));
+  lg.addColorStop(1, rgba(lerp3(col, COL.deep, 0.5), 0.95));
+  ctx.fillStyle = lg;
+  // Wavy surface.
+  ctx.beginPath();
+  ctx.moveTo(n.x - n.r, n.y + n.r);
+  const waveAmp = 3 + Math.abs(dev) * 40;
+  for (let x = -n.r; x <= n.r; x += 4) {
+    const wy = liquidTop + Math.sin((x * 0.06) + time * 2.2 + i) * waveAmp
+                        + Math.sin((x * 0.13) - time * 1.3) * waveAmp * 0.4;
+    ctx.lineTo(n.x + x, wy);
+  }
+  ctx.lineTo(n.x + n.r, n.y + n.r);
+  ctx.closePath();
+  ctx.fill();
+  // Surface highlight line.
+  ctx.strokeStyle = rgba(thermal(Math.min(1, tdev + 0.15)), 0.9);
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let x = -n.r; x <= n.r; x += 4) {
+    const wy = liquidTop + Math.sin((x * 0.06) + time * 2.2 + i) * waveAmp
+                        + Math.sin((x * 0.13) - time * 1.3) * waveAmp * 0.4;
+    if (x === -n.r) ctx.moveTo(n.x + x, wy); else ctx.lineTo(n.x + x, wy);
+  }
+  ctx.stroke();
+  ctx.restore();
+
+  // Setpoint tick mark on the tank (where liquid sits at equilibrium).
+  const spTop = n.y + n.r - clamp(SETPOINT / (SETPOINT * 2), 0, 1) * n.r * 2;
+  ctx.strokeStyle = 'rgba(0,255,156,0.35)';
+  ctx.setLineDash([3, 4]);
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(n.x - n.r, spTop); ctx.lineTo(n.x + n.r, spTop); ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.restore();
+
+  // Labels.
+  ctx.textAlign = 'center';
+  ctx.font = '600 12px IBM Plex Mono, monospace';
+  ctx.fillStyle = rgba(col, 0.95);
+  ctx.shadowBlur = 8; ctx.shadowColor = rgba(col, 0.5);
+  // Place label outside the ring, away from center.
+  const lx = n.x + Math.cos(n.ang) * (n.r + 18);
+  const ly = n.y + Math.sin(n.ang) * (n.r + 18);
+  ctx.fillText(NAMES[i], lx, ly + (Math.sin(n.ang) > 0.2 ? 12 : 0));
+  ctx.shadowBlur = 0;
+
+  // Numeric readout (level & deviation).
+  ctx.font = '10px IBM Plex Mono, monospace';
+  ctx.fillStyle = 'rgba(0,255,156,0.6)';
+  const pct = (L * 100).toFixed(1);
+  const sign = dev >= 0 ? '+' : '−';
+  ctx.fillText(`${pct}%  ${sign}${Math.abs(dev*100).toFixed(1)}`, lx, ly + (Math.sin(n.ang) > 0.2 ? 26 : 14));
+}
+
+// Central setpoint hub.
+function drawHub(time) {
+  ctx.save();
+  ctx.translate(centerX, centerY);
+  const pulse = 0.5 + 0.5 * Math.sin(time * 1.6);
+  ctx.strokeStyle = `rgba(0,255,156,${0.18 + pulse * 0.12})`;
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(0, 0, 16 + pulse * 4, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = 'rgba(0,255,156,0.7)';
+  ctx.beginPath(); ctx.arc(0, 0, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.font = '9px IBM Plex Mono, monospace';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(0,255,156,0.45)';
+  ctx.fillText('SETPOINT', 0, 34);
+  ctx.fillText((SETPOINT * 100).toFixed(1) + '%', 0, 46);
+  ctx.restore();
+}
+
+// Bottom strip chart: four levels oscillating around setpoint line.
+function drawChart() {
+  const { x, y, w, h } = chart;
+  // Frame.
+  ctx.fillStyle = 'rgba(8,12,9,0.55)';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = 'rgba(0,255,156,0.14)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, w, h);
+
+  // Value range for the chart (centered on setpoint).
+  const vmin = 0, vmax = SETPOINT * 2;
+  const toY = (v) => y + h - clamp((v - vmin) / (vmax - vmin), 0, 1) * h;
+
+  // Setpoint line.
+  const spY = toY(SETPOINT);
+  ctx.strokeStyle = 'rgba(0,255,156,0.3)';
+  ctx.setLineDash([4, 5]);
+  ctx.beginPath(); ctx.moveTo(x, spY); ctx.lineTo(x + w, spY); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.font = '8px IBM Plex Mono, monospace';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(0,255,156,0.4)';
+  ctx.fillText('SETPOINT', x + 6, spY - 4);
+
+  // Series.
+  const hist = S.history;
+  const n = hist.length;
+  if (n < 2) return;
+  for (let s = 0; s < N; s++) {
+    // Color each series by its current deviation.
+    const dev = S.levels[s] - SETPOINT;
+    const tdev = clamp(0.5 + dev / (SETPOINT * 1.5), 0, 1);
+    ctx.strokeStyle = rgba(thermal(tdev), 0.9);
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    for (let p = 0; p < n; p++) {
+      const px = x + (p / (HIST_MAX - 1)) * w;
+      const py = toY(hist[p][s]);
+      if (p === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+    // Label at right end.
+    const lastY = toY(hist[n-1][s]);
+    ctx.font = '8px IBM Plex Mono, monospace';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = rgba(thermal(tdev), 0.95);
+    ctx.fillText(NAMES[s], x + w - 56, lastY - 3);
+  }
+}
+
+// ----- HUD text update ----------------------------------------
+const el = {
+  setpoint: document.getElementById('r-setpoint'),
+  error:    document.getElementById('r-error'),
+  state:    document.getElementById('r-state'),
+  tick:     document.getElementById('r-tick'),
+  total:    document.getElementById('r-total'),
+};
+function maxError() {
+  let m = 0;
+  for (let i = 0; i < N; i++) m = Math.max(m, Math.abs(S.levels[i] - SETPOINT));
+  return m;
+}
+let hudClock = 0;
+function updateHUD() {
+  const err = maxError();
+  el.setpoint.textContent = (SETPOINT * 100).toFixed(1) + '%';
+  el.error.textContent = (err * 100).toFixed(2) + '%';
+  const inBand = err < 0.035;
+  el.state.textContent = inBand ? 'IN-BAND' : 'CORRECTING';
+  el.state.className = 'v ' + (inBand ? '' : 'warn');
+  el.error.className = 'v ' + (inBand ? '' : 'warn');
+  el.tick.textContent = S.tick.toString().padStart(6, '0');
+  let sum = 0; for (let i = 0; i < N; i++) sum += S.levels[i];
+  el.total.textContent = 'Σ = ' + (sum * 100).toFixed(2) + '%';
+}
+
+// ----- Main loop ----------------------------------------------
+let lastT = performance.now();
+let acc = 0;
+const TICK_MS = 1000 / 60; // physics at ~60Hz
+
+function frame(now) {
+  const dt = Math.min(now - lastT, 100);
+  lastT = now;
+  acc += dt;
+  // Fixed-step physics integration (keeps dynamics stable & consistent).
+  let steps = 0;
+  while (acc >= TICK_MS && steps < 4) {
+    S = step(S);
+    acc -= TICK_MS;
+    steps++;
+  }
+
+  const time = now / 1000;
+  drawBackground();
+  // Channels under reservoirs.
+  for (let e = 0; e < EDGES.length; e++) drawChannel(e, time);
+  drawHub(time);
+  for (let i = 0; i < N; i++) drawReservoir(i, time);
+  drawChart();
+
+  hudClock += dt;
+  if (hudClock > 100) { updateHUD(); hudClock = 0; }
+
+  requestAnimationFrame(frame);
+}
+
+resize();
+updateHUD();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

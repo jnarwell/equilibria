@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>EXERGY FLOWFIELD — Equilibria I</title>
+<style>
+  /* ============================================================
+     EQUILIBRIA I — EXERGY FLOWFIELD
+     Cyberdeck-meets-solarpunk / thermodynamic equilibrium.
+     Pure vanilla. No deps. Open the file and it runs.
+     ============================================================ */
+
+  :root {
+    --bg: #0a0e0b;            /* near-black, slightly warm-green */
+    --phosphor: #00ff9c;      /* phosphor green text */
+    --amber: #ff7b00;         /* hot accent */
+    --verdigris: #2a9d8f;     /* cool accent */
+    --dim: #5c7a6e;           /* muted label green */
+    --mono: 'IBM Plex Mono', 'SF Mono', ui-monospace, 'Menlo', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+  }
+
+  #stage { position: fixed; inset: 0; }
+
+  canvas { display: block; width: 100%; height: 100%; }
+
+  /* ---- CRT overlay: faint scanlines + soft vignette -------- */
+  #crt {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 10;
+    background:
+      repeating-linear-gradient(
+        0deg,
+        rgba(0, 0, 0, 0.16) 0px,
+        rgba(0, 0, 0, 0.16) 1px,
+        rgba(0, 0, 0, 0)   2px,
+        rgba(0, 0, 0, 0)   3px
+      );
+    mix-blend-mode: multiply;
+  }
+  #vignette {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 11;
+    background: radial-gradient(
+      ellipse 120% 100% at 50% 50%,
+      rgba(0, 0, 0, 0) 55%,
+      rgba(0, 0, 0, 0.45) 100%
+    );
+  }
+
+  /* ---- Terminal overlay ----------------------------------- */
+  .overlay {
+    position: fixed;
+    z-index: 20;
+    font-family: var(--mono);
+    color: var(--phosphor);
+    text-shadow: 0 0 6px rgba(0, 255, 156, 0.35);
+    pointer-events: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* Title bar */
+  #titlebar {
+    top: 0; left: 0; right: 0;
+    padding: 16px 22px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    background: linear-gradient(180deg, rgba(10,14,11,0.65) 0%, rgba(10,14,11,0) 100%);
+  }
+  #titlebar .row { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  #titlebar .idx {
+    color: var(--amber);
+    text-shadow: 0 0 7px rgba(255, 123, 0, 0.45);
+    font-size: 12px;
+    letter-spacing: 0.30em;
+  }
+  #titlebar .name {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.34em;
+    text-transform: uppercase;
+  }
+  #titlebar .caption {
+    color: var(--dim);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    text-shadow: none;
+  }
+
+  /* Readout panel (bottom-left corner) */
+  #readout {
+    left: 22px;
+    bottom: 22px;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    line-height: 1.85;
+    text-transform: uppercase;
+    border: 1px solid rgba(0, 255, 156, 0.18);
+    border-radius: 3px;
+    padding: 12px 16px 12px 14px;
+    background: rgba(8, 14, 11, 0.42);
+    backdrop-filter: blur(1.5px);
+    min-width: 220px;
+  }
+  #readout .line { display: flex; justify-content: space-between; gap: 24px; }
+  #readout .k { color: var(--dim); text-shadow: none; }
+  #readout .v { color: var(--phosphor); font-variant-numeric: tabular-nums; }
+  #readout .v.hot { color: var(--amber); text-shadow: 0 0 6px rgba(255,123,0,0.4); }
+  #readout .hr {
+    height: 1px;
+    margin: 7px 0;
+    background: linear-gradient(90deg, rgba(0,255,156,0.25), rgba(0,255,156,0));
+  }
+  #readout .loop {
+    color: var(--verdigris);
+    text-shadow: 0 0 6px rgba(42, 157, 143, 0.5);
+    letter-spacing: 0.22em;
+  }
+
+  /* Bottom-right legend */
+  #legend {
+    right: 22px;
+    bottom: 22px;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    text-align: right;
+    color: var(--dim);
+    text-shadow: none;
+    line-height: 1.7;
+  }
+  #legend .bar {
+    display: inline-block;
+    width: 150px;
+    height: 7px;
+    margin-top: 5px;
+    border-radius: 2px;
+    background: linear-gradient(90deg,
+      #1b4d3e 0%, #2a9d8f 22%, #00ff9c 40%,
+      #d4a017 66%, #ff7b00 88%, #ff4d00 100%);
+    box-shadow: 0 0 8px rgba(255,123,0,0.18);
+  }
+  #legend .ends { display: flex; justify-content: space-between; width: 150px; margin-top: 3px; }
+  #legend .ends .cool { color: var(--verdigris); }
+  #legend .ends .hot  { color: var(--amber); }
+</style>
+</head>
+<body>
+  <div id="stage">
+    <canvas id="c"></canvas>
+  </div>
+
+  <!-- CRT + vignette -->
+  <div id="crt"></div>
+  <div id="vignette"></div>
+
+  <!-- Terminal overlay -->
+  <div id="titlebar" class="overlay">
+    <div class="row">
+      <span class="idx">I / IV</span>
+      <span class="name">Exergy Flowfield</span>
+    </div>
+    <div class="caption">Closed system · energy conserved · dissipation recaptured &amp; returned to the hot source</div>
+  </div>
+
+  <div id="readout" class="overlay">
+    <div class="line"><span class="k">Temp&nbsp;T</span><span class="v hot" id="r-temp">—</span></div>
+    <div class="line"><span class="k">Exergy&nbsp;&#966;</span><span class="v" id="r-phi">—</span></div>
+    <div class="line"><span class="k">Particles</span><span class="v" id="r-count">—</span></div>
+    <div class="line"><span class="k">Recaptured</span><span class="v" id="r-recap">—</span></div>
+    <div class="hr"></div>
+    <div class="line"><span class="k">Iter</span><span class="v" id="r-iter">—</span></div>
+    <div class="line"><span class="k">Loop</span><span class="v loop" id="r-loop">CLOSED</span></div>
+  </div>
+
+  <div id="legend" class="overlay">
+    <div>Thermal &#8594; Verdant</div>
+    <div class="bar"></div>
+    <div class="ends"><span class="cool">RETURN</span><span class="hot">SOURCE</span></div>
+  </div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   0. CANVAS SETUP — full window, devicePixelRatio aware
+   ============================================================ */
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d", { alpha: false });
+
+let W = 0, H = 0, DPR = 1;
+
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width  = Math.floor(W * DPR);
+  canvas.height = Math.floor(H * DPR);
+  canvas.style.width  = W + "px";
+  canvas.style.height = H + "px";
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  // Paint a fresh warm-black ground on resize so trails restart cleanly.
+  ctx.fillStyle = BG;
+  ctx.fillRect(0, 0, W, H);
+}
+
+/* ============================================================
+   1. PALETTE — thermal -> verdant lerp over t in [0,1]
+      t = 1  hot dissipation   amber / #ff4d00
+      t ~0.6 warm gold         #d4a017
+      t = 0  cool return/life  verdigris -> phosphor green
+   ============================================================ */
+const BG = "#0a0e0b";
+
+// Color control points as [t, r, g, b], ascending in t.
+const STOPS = [
+  [0.00,  27,  77,  62],   // #1b4d3e deep verdant
+  [0.18,  42, 157, 143],   // #2a9d8f verdigris
+  [0.36,   0, 255, 156],   // #00ff9c phosphor green (the "alive" band)
+  [0.58, 120, 175, 110],   // transitional sage
+  [0.70, 212, 160,  23],   // #d4a017 warm gold
+  [0.88, 255, 123,   0],   // #ff7b00 amber
+  [1.00, 255,  77,   0],   // #ff4d00 hottest
+];
+
+// Linear interpolate the gradient. Returns {r,g,b} ints.
+function thermal(t) {
+  if (t <= 0) return { r: STOPS[0][1], g: STOPS[0][2], b: STOPS[0][3] };
+  if (t >= 1) { const s = STOPS[STOPS.length - 1]; return { r: s[1], g: s[2], b: s[3] }; }
+  for (let i = 0; i < STOPS.length - 1; i++) {
+    const a = STOPS[i], b = STOPS[i + 1];
+    if (t >= a[0] && t <= b[0]) {
+      const f = (t - a[0]) / (b[0] - a[0]);
+      return {
+        r: Math.round(a[1] + (b[1] - a[1]) * f),
+        g: Math.round(a[2] + (b[2] - a[2]) * f),
+        b: Math.round(a[3] + (b[3] - a[3]) * f),
+      };
+    }
+  }
+  const s = STOPS[STOPS.length - 1];
+  return { r: s[1], g: s[2], b: s[3] };
+}
+
+/* ============================================================
+   2. NOISE — small self-contained value-noise field with
+      fractal (fBm) octaves + smooth interpolation. No libs.
+   ============================================================ */
+const Noise = (function () {
+  // Deterministic-ish permutation seeded with a small LCG.
+  const SIZE = 256, MASK = 255;
+  const perm = new Uint8Array(SIZE * 2);
+  const grad = new Float32Array(SIZE);
+
+  let seed = 1337 >>> 0;
+  const rand = () => {
+    // xorshift32
+    seed ^= seed << 13; seed >>>= 0;
+    seed ^= seed >> 17;
+    seed ^= seed << 5;  seed >>>= 0;
+    return seed / 4294967296;
+  };
+
+  const tmp = new Uint8Array(SIZE);
+  for (let i = 0; i < SIZE; i++) { tmp[i] = i; grad[i] = rand(); }
+  for (let i = SIZE - 1; i > 0; i--) {
+    const j = (rand() * (i + 1)) | 0;
+    const t = tmp[i]; tmp[i] = tmp[j]; tmp[j] = t;
+  }
+  for (let i = 0; i < SIZE * 2; i++) perm[i] = tmp[i & MASK];
+
+  const fade = (t) => t * t * t * (t * (t * 6 - 15) + 10); // quintic smootherstep
+  const lerp = (a, b, t) => a + (b - a) * t;
+
+  // 2D value noise in roughly [-1, 1].
+  function noise2(x, y) {
+    const xi = Math.floor(x) & MASK;
+    const yi = Math.floor(y) & MASK;
+    const xf = x - Math.floor(x);
+    const yf = y - Math.floor(y);
+    const u = fade(xf), v = fade(yf);
+
+    const aa = grad[perm[perm[xi] + yi]];
+    const ab = grad[perm[perm[xi] + yi + 1]];
+    const ba = grad[perm[perm[xi + 1] + yi]];
+    const bb = grad[perm[perm[xi + 1] + yi + 1]];
+
+    const x1 = lerp(aa, ba, u);
+    const x2 = lerp(ab, bb, u);
+    return lerp(x1, x2, v) * 2 - 1;
+  }
+
+  // Fractal Brownian motion: layered octaves for organic structure.
+  function fbm(x, y, octaves) {
+    let sum = 0, amp = 0.5, freq = 1, norm = 0;
+    for (let o = 0; o < octaves; o++) {
+      sum += amp * noise2(x * freq, y * freq);
+      norm += amp;
+      amp *= 0.5;
+      freq *= 2.0;
+    }
+    return sum / norm; // ~[-1,1]
+  }
+
+  return { noise2, fbm };
+})();
+
+/* ============================================================
+   3. SIMULATION PARAMETERS — the tuning knobs.
+      Exposed on window.PARAMS so they can be tweaked live in
+      the console without reloading.
+   ============================================================ */
+const PARAMS = {
+  particleCount: 2600,   // constant population (conserved)
+  noiseScale:    0.0016, // spatial frequency of the flow field
+  noiseDrift:    0.00006,// slow temporal evolution of the field
+  fieldTurns:    2.4,    // how many radians the field spans
+  speed:         1.35,   // advection speed (px/frame at unit field)
+  coolRate:      0.0019, // temperature lost per frame of travel
+  strokeAlpha:   0.10,   // per-stroke opacity (painterly build-up)
+  fadeAlpha:     0.010,  // per-frame global fade -> equilibrium
+  octaves:       4,      // fBm octaves
+  hotBandFrac:   0.16,   // source band height as fraction of screen
+  recaptureGlow: 0.06,   // opacity of faint recapture motion lines
+};
+window.PARAMS = PARAMS; // live-tunable
+
+/* ============================================================
+   4. PARTICLES — born hot at the source band (top edge),
+      cool as they travel, then are RECAPTURED and REINJECTED
+      hot at the source. Total count is conserved.
+   ============================================================ */
+let particles = [];
+let recapturedTotal = 0;
+
+// The hot source is a horizontal band along the TOP of the canvas.
+function sourceY() { return H * PARAMS.hotBandFrac * 0.5; }
+
+// Spawn position: jittered within the source band.
+function spawnAtSource(p) {
+  p.x = Math.random() * W;
+  p.y = Math.random() * (H * PARAMS.hotBandFrac);
+  p.px = p.x;
+  p.py = p.y;
+  p.t = 1.0;                                   // born hot
+  p.life = 0;
+  p.maxLife = 520 + Math.random() * 520;       // lifetime spread
+  p.w = 0.6 + Math.random() * 1.7;             // stroke width
+  p.returning = false;                          // in recapture phase?
+}
+
+function initParticles() {
+  particles = [];
+  for (let i = 0; i < PARAMS.particleCount; i++) {
+    const p = {};
+    spawnAtSource(p);
+    // Pre-warm: distribute initial temps so the field isn't a flat front.
+    p.t = Math.random();
+    p.y = Math.random() * H;
+    p.py = p.y;
+    p.px = p.x;
+    particles.push(p);
+  }
+}
+
+// Recapture a fully-cooled / exited particle: send it home and re-ignite.
+// This is the closed-loop mechanism — population never changes.
+function recapture(p) {
+  recapturedTotal++;
+  spawnAtSource(p);
+}
+
+/* ============================================================
+   5. UPDATE + RENDER
+   ============================================================ */
+let iter = 0;
+let zTime = 0;       // temporal noise offset (slow field drift)
+let meanTemp = 0.5;  // smoothed readout value
+
+function step() {
+  iter++;
+  zTime += PARAMS.noiseDrift * 1000;
+
+  // ---- Global gentle fade keeps the canvas in equilibrium ----
+  // Draw a translucent warm-black rectangle each frame so old
+  // strokes decay instead of saturating to a solid block.
+  ctx.globalCompositeOperation = "source-over";
+  ctx.fillStyle = "rgba(10, 14, 11, " + PARAMS.fadeAlpha + ")";
+  ctx.fillRect(0, 0, W, H);
+
+  // ---- Additive strokes for luminous, glowing accumulation ----
+  ctx.globalCompositeOperation = "lighter";
+  ctx.lineCap = "round";
+
+  let tempSum = 0;
+  const ns = PARAMS.noiseScale;
+  const turns = PARAMS.fieldTurns;
+  const spd = PARAMS.speed;
+
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i];
+
+    if (p.returning) {
+      // ---- RECAPTURE PHASE: drift back toward the hot source ----
+      // A faint, legible return current. Pull toward source band.
+      const tx = p.homeX;
+      const ty = sourceY();
+      const dx = tx - p.x;
+      const dy = ty - p.y;
+      const d = Math.hypot(dx, dy) || 1;
+      const rs = spd * 1.5;
+      p.px = p.x; p.py = p.y;
+      p.x += (dx / d) * rs;
+      p.y += (dy / d) * rs;
+
+      // Draw faint cool return trace.
+      const col = thermal(0.10);
+      ctx.strokeStyle = "rgba(" + col.r + "," + col.g + "," + col.b + "," + PARAMS.recaptureGlow + ")";
+      ctx.lineWidth = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(p.px, p.py);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+
+      if (d < 6) recapture(p); // arrived home -> re-ignite hot
+      tempSum += p.t;
+      continue;
+    }
+
+    // ---- ADVECTION PHASE ----
+    // Sample the flow field angle from fBm noise.
+    const n = Noise.fbm(p.x * ns, p.y * ns + zTime, PARAMS.octaves);
+    const angle = n * Math.PI * turns;
+
+    // Temperature subtly biases flow: hot particles rise/spread a touch.
+    const vx = Math.cos(angle) * spd;
+    const vy = Math.sin(angle) * spd + (p.t - 0.5) * 0.25;
+
+    p.px = p.x; p.py = p.y;
+    p.x += vx;
+    p.y += vy;
+
+    // ---- COOL as it travels (energy dissipates along the path) ----
+    p.t -= PARAMS.coolRate;
+    p.life++;
+
+    // Stroke colored by current temperature.
+    const col = thermal(p.t);
+    const a = PARAMS.strokeAlpha * (0.45 + p.t * 0.55); // hotter = brighter
+    ctx.strokeStyle = "rgba(" + col.r + "," + col.g + "," + col.b + "," + a + ")";
+    ctx.lineWidth = p.w * (0.6 + p.t * 0.9);
+    ctx.beginPath();
+    ctx.moveTo(p.px, p.py);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+
+    tempSum += p.t;
+
+    // ---- TRIGGER RECAPTURE: fully cooled, expired, or exited ----
+    const cooled  = p.t <= 0.02;
+    const expired = p.life >= p.maxLife;
+    const exited  = p.x < -20 || p.x > W + 20 || p.y > H + 20;
+
+    if (cooled || expired || exited) {
+      // Begin the visible return journey rather than teleporting.
+      p.returning = true;
+      p.homeX = Math.random() * W;
+      // Clamp stray exits back near the frame so the return reads on-screen.
+      p.x = Math.max(-20, Math.min(W + 20, p.x));
+      p.y = Math.max(-20, Math.min(H + 20, p.y));
+      p.t = Math.max(p.t, 0.0);
+    }
+  }
+
+  // ---- Smooth readout temperature ----
+  const inst = tempSum / particles.length;
+  meanTemp += (inst - meanTemp) * 0.04;
+}
+
+/* ============================================================
+   6. READOUT PANEL — animated live stats
+   ============================================================ */
+const elTemp  = document.getElementById("r-temp");
+const elPhi   = document.getElementById("r-phi");
+const elCount = document.getElementById("r-count");
+const elRecap = document.getElementById("r-recap");
+const elIter  = document.getElementById("r-iter");
+
+let lastUI = 0;
+function updateReadout(now) {
+  if (now - lastUI < 120) return; // throttle DOM writes
+  lastUI = now;
+
+  // Map mean temperature t in [0,1] to a plausible Kelvin range.
+  // t=0 -> ~298 K (ambient/return), t=1 -> ~1873 K (hot dissipation).
+  const T = 298 + meanTemp * (1873 - 298);
+  // Exergy phi: useful work potential, normalized; scales with temp
+  // above the dead state (ambient). Purely illustrative.
+  const phi = Math.max(0, (T - 298) / (1873 - 298)) * 100;
+
+  elTemp.textContent  = T.toFixed(0) + " K";
+  elPhi.textContent   = phi.toFixed(1) + " %";
+  elCount.textContent = particles.length.toLocaleString();
+  elRecap.textContent = recapturedTotal.toLocaleString();
+  elIter.textContent  = iter.toLocaleString();
+
+  // Tint the temp readout hot/cool with the mean.
+  elTemp.classList.toggle("hot", meanTemp > 0.45);
+}
+
+/* ============================================================
+   7. MAIN LOOP
+   ============================================================ */
+function frame(now) {
+  step();
+  updateReadout(now);
+  requestAnimationFrame(frame);
+}
+
+/* ============================================================
+   8. BOOT
+   ============================================================ */
+window.addEventListener("resize", () => {
+  resize();
+  initParticles();
+});
+
+resize();
+initParticles();
+requestAnimationFrame(frame);
+
+</script>
+</body>
+</html>

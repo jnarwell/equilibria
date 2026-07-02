@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>EQUILIBRIA STUDIO — generative substrate</title>
+<style>
+  :root {
+    --bg:#0a0e0b; --panel:#0c1210; --edge:rgba(42,157,143,0.28);
+    --hot:#ff4d00; --amber:#ff7b00; --gold:#d4a017;
+    --verd:#2a9d8f; --deep:#1b4d3e; --phos:#00ff9c;
+    --ink:#cfeede; --dim:#6f8c80;
+    --mono:'IBM Plex Mono','SF Mono',ui-monospace,'Menlo',monospace;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--ink);
+    font-family:var(--mono); overflow:hidden; }
+  body { display:grid; grid-template-columns:230px 1fr 264px; grid-template-rows:1fr 176px; height:100vh; }
+  body::after { content:""; position:fixed; inset:0; pointer-events:none; z-index:30;
+    background:repeating-linear-gradient(to bottom,rgba(0,0,0,0) 0 2px,rgba(0,0,0,0.10) 3px,rgba(0,0,0,0) 4px);
+    mix-blend-mode:multiply; }
+
+  .col { overflow-y:auto; padding:16px 14px; min-height:0; }
+  .rack { border-right:1px solid var(--edge); background:var(--panel); }
+  .controls { border-left:1px solid var(--edge); background:var(--panel); }
+  .stage { position:relative; background:var(--bg); overflow:hidden; padding:0; min-height:0; }
+  .library { grid-column:1 / -1; border-top:1px solid var(--edge); background:var(--panel);
+    display:flex; gap:16px; padding:10px 14px; overflow:hidden; min-height:0; }
+
+  .brand { font-size:15px; letter-spacing:0.14em; color:transparent;
+    background:linear-gradient(100deg,var(--amber),var(--verd)); -webkit-background-clip:text; background-clip:text;
+    font-weight:600; margin:2px 0 2px; }
+  .brand small { display:block; font-size:9px; letter-spacing:0.24em; color:var(--dim);
+    -webkit-text-fill-color:var(--dim); margin-top:3px; }
+  .lbl { font-size:9px; letter-spacing:0.2em; text-transform:uppercase; color:var(--dim);
+    margin:18px 0 8px; border-bottom:1px solid rgba(42,157,143,0.18); padding-bottom:5px; }
+  .lbl:first-child { margin-top:2px; }
+
+  .cart { display:block; width:100%; text-align:left; cursor:pointer; margin-bottom:7px;
+    background:linear-gradient(180deg,rgba(20,28,24,0.5),rgba(10,14,11,0.5));
+    border:1px solid var(--edge); border-radius:7px; padding:9px 10px; color:var(--ink);
+    font-family:var(--mono); transition:border-color .15s,transform .15s; position:relative; }
+  .cart::before { content:""; position:absolute; left:0; top:0; bottom:0; width:2px;
+    background:linear-gradient(180deg,var(--amber),var(--verd)); opacity:.75; border-radius:7px 0 0 7px; }
+  .cart:hover { transform:translateY(-1px); border-color:rgba(0,255,156,0.5); }
+  .cart.active { border-color:var(--phos); box-shadow:0 0 16px rgba(0,255,156,0.14); }
+  .cart .cn { font-size:12.5px; font-weight:600; color:#eafff5; }
+  .cart .cb { font-size:9.5px; letter-spacing:.05em; color:var(--dim); margin-top:2px; }
+
+  canvas { display:block; width:100%; height:100%; }
+  .stagehud { position:absolute; left:16px; top:14px; z-index:10; pointer-events:none; font-size:11px; letter-spacing:.12em; }
+  .stagehud .t { color:var(--amber); text-transform:uppercase; text-shadow:0 0 8px rgba(255,123,0,.4); }
+  .stagehud .b { color:var(--dim); font-size:10px; margin-top:2px; }
+  .readouts { position:absolute; right:14px; bottom:12px; z-index:10; text-align:right;
+    font-size:10.5px; letter-spacing:.08em; color:var(--dim); pointer-events:none; line-height:1.5; }
+  .readouts b { color:var(--phos); font-weight:600; }
+  body.couple .stagehud, body.couple .readouts { display:none; }
+
+  /* mode switch */
+  .modesw { position:absolute; right:14px; top:12px; z-index:12; display:flex; gap:0; }
+  .msw { font-family:var(--mono); font-size:9.5px; letter-spacing:.16em; padding:6px 12px; cursor:pointer;
+    background:#0c1210; color:var(--dim); border:1px solid var(--edge); }
+  .msw:first-child { border-radius:5px 0 0 5px; } .msw:last-child { border-radius:0 5px 5px 0; border-left:none; }
+  .msw.on { color:var(--phos); border-color:var(--phos); box-shadow:0 0 12px rgba(0,255,156,.15) inset; }
+
+  /* couple grid */
+  #couple-host { display:none; }
+  body.couple #canvas-host { display:none; }
+  body.couple #couple-host { display:grid; position:absolute; inset:0;
+    grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:1px; background:var(--edge); }
+  .ccell { position:relative; background:var(--bg); overflow:hidden; }
+  .ccell canvas { width:100%; height:100%; display:block; }
+  .clab { position:absolute; left:9px; top:7px; font-size:9px; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--amber); text-shadow:0 0 6px rgba(255,123,0,.4); pointer-events:none; }
+  .cmeter { position:absolute; left:9px; bottom:8px; width:74px; height:3px; background:rgba(255,255,255,.09);
+    border-radius:2px; overflow:hidden; pointer-events:none; }
+  .cmeter i { display:block; height:100%; width:0; background:linear-gradient(90deg,var(--verd),var(--gold),var(--amber)); }
+  .cin { position:absolute; right:9px; bottom:7px; font-size:8px; letter-spacing:.08em; color:var(--verd); pointer-events:none; }
+
+  .knob { margin-bottom:13px; }
+  .knob .kh { display:flex; justify-content:space-between; font-size:9.5px;
+    letter-spacing:.1em; text-transform:uppercase; color:var(--dim); margin-bottom:5px; }
+  .knob .kv { color:var(--gold); }
+  input[type=range]{ -webkit-appearance:none; appearance:none; width:100%; height:3px;
+    background:linear-gradient(90deg,var(--deep),var(--verd),var(--gold),var(--amber));
+    border-radius:2px; outline:none; }
+  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none;
+    width:13px; height:13px; border-radius:50%; background:var(--phos); cursor:pointer;
+    box-shadow:0 0 8px rgba(0,255,156,.6); border:1px solid #0a0e0b; }
+
+  .btn { display:block; width:100%; margin:6px 0; padding:9px; cursor:pointer;
+    background:transparent; color:var(--phos); border:1px solid var(--edge); border-radius:6px;
+    font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase;
+    transition:border-color .15s,background .15s; }
+  .btn:hover { border-color:var(--phos); background:rgba(0,255,156,0.06); }
+  .btn.rec-on { color:var(--hot); border-color:var(--hot); background:rgba(255,77,0,.08); }
+  .btn.warm { color:var(--gold); }
+  .btn:disabled { opacity:.35; cursor:not-allowed; }
+  .btnrow { display:flex; gap:6px; }
+  .btnrow .btn { margin:6px 0; }
+
+  /* routing matrix */
+  #routing { display:none; }
+  body.couple #routing { display:block; }
+  body.couple #knobs, body.couple .solo-only { display:none; }
+  .matrix { display:grid; grid-template-columns:26px repeat(4,1fr); gap:4px; margin:4px 0 12px; align-items:center; }
+  .mx-corner { font-size:7px; color:var(--dim); line-height:1.1; }
+  .mx-h { font-size:8px; color:var(--dim); text-align:center; letter-spacing:.04em; }
+  .mx-rh { font-size:8px; color:var(--amber); text-align:right; padding-right:2px; }
+  .mx-cell { aspect-ratio:1; border:1px solid var(--edge); border-radius:3px; cursor:pointer; transition:background .12s; }
+  .mx-cell:hover { border-color:var(--phos); }
+  .mx-cell.on { background:var(--phos); box-shadow:0 0 8px rgba(0,255,156,.45); }
+  .mx-cell.diag { opacity:.14; cursor:default; border-style:dashed; }
+  .rhint { font-size:9px; color:var(--dim); line-height:1.5; margin:6px 0 12px; }
+
+  .commission textarea { width:100%; min-height:52px; resize:vertical; background:#0a0e0b;
+    color:var(--ink); border:1px solid var(--edge); border-radius:6px; padding:8px;
+    font-family:var(--mono); font-size:11px; margin-bottom:6px; }
+  .hint { font-size:9px; color:var(--dim); line-height:1.5; margin-top:6px; }
+  .toast { position:fixed; left:50%; bottom:196px; transform:translateX(-50%); z-index:40;
+    background:#0c1210; border:1px solid var(--phos); color:var(--phos); padding:7px 14px;
+    border-radius:6px; font-size:11px; letter-spacing:.1em; opacity:0; transition:opacity .2s; pointer-events:none; }
+  .toast.show { opacity:1; }
+
+  .libsec { display:flex; flex-direction:column; min-width:0; }
+  .libsec.saved { flex:1; }
+  .libsec.breed { width:340px; border-left:1px solid rgba(42,157,143,0.18); padding-left:16px; }
+  .libhead { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+  .libhead .lbl { margin:0; border:none; padding:0; }
+  .strip { display:flex; gap:8px; overflow-x:auto; overflow-y:hidden; padding-bottom:6px; flex:1; align-items:flex-start; }
+  .thumb { position:relative; flex:0 0 auto; width:118px; cursor:pointer; border:1px solid var(--edge);
+    border-radius:6px; overflow:hidden; background:#0a0e0b; transition:border-color .15s,transform .15s; }
+  .thumb:hover { transform:translateY(-2px); border-color:rgba(0,255,156,.5); }
+  .thumb.sel { border-color:var(--amber); box-shadow:0 0 0 1px var(--amber), 0 0 14px rgba(255,123,0,.3); }
+  .thumb img { display:block; width:100%; height:72px; object-fit:cover; }
+  .thumb .meta { font-size:8.5px; letter-spacing:.06em; color:var(--dim); padding:4px 6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .thumb .del { position:absolute; top:3px; right:4px; color:var(--dim); font-size:11px; line-height:1;
+    background:rgba(10,14,11,.7); border-radius:3px; padding:1px 4px; opacity:0; }
+  .thumb:hover .del { opacity:1; } .thumb .del:hover { color:var(--hot); }
+  .empty { font-size:10px; color:var(--dim); align-self:center; padding:20px 0; }
+  .chip { flex:0 0 auto; cursor:pointer; border:1px solid var(--edge); border-radius:6px; padding:7px 9px;
+    background:linear-gradient(180deg,rgba(20,28,24,.5),rgba(10,14,11,.5)); min-width:78px; transition:border-color .15s,transform .15s; }
+  .chip:hover { transform:translateY(-2px); border-color:var(--phos); }
+  .chip .cn { font-size:11px; color:var(--phos); font-weight:600; }
+  .chip .cd { font-size:8.5px; color:var(--dim); margin-top:3px; line-height:1.35; white-space:nowrap; }
+  body.couple .library { opacity:.4; pointer-events:none; }
+</style>
+</head>
+<body>
+  <!-- RACK -->
+  <div class="col rack">
+    <div class="brand">EQUILIBRIA STUDIO<small>GENERATIVE SUBSTRATE</small></div>
+    <div class="lbl">Cartridges</div>
+    <div id="rack"></div>
+    <div class="lbl">Commission a system</div>
+    <div class="commission">
+      <textarea id="commission" placeholder="e.g. heat pools into rivers, rivers freeze into circuitry…"></textarea>
+      <button class="btn" id="btn-queue">＋ Queue for agent</button>
+      <div class="hint">Queues locally; hand it to your coding agent. It writes a cartridge to the contract and it racks here.</div>
+    </div>
+  </div>
+
+  <!-- STAGE -->
+  <div class="stage">
+    <div class="modesw">
+      <button class="msw on" id="mode-solo">SOLO</button>
+      <button class="msw" id="mode-couple">COUPLE</button>
+    </div>
+    <div class="stagehud"><div class="t" id="hud-t">—</div><div class="b" id="hud-b"></div></div>
+    <div id="canvas-host" style="position:absolute; inset:0;"></div>
+    <div id="couple-host"></div>
+    <div class="readouts" id="readouts"></div>
+  </div>
+
+  <!-- CONTROLS -->
+  <div class="col controls">
+    <div id="routing">
+      <div class="lbl">Routing · emit → absorb</div>
+      <div class="matrix" id="matrix"></div>
+      <div class="knob"><div class="kh"><span>Coupling strength</span><span class="kv" id="str-val">0.60</span></div>
+        <input type="range" id="str" min="0" max="1" step="0.01" value="0.6"></div>
+      <div class="btnrow"><button class="btn" id="btn-loop">⭯ Loop all</button><button class="btn" id="btn-clear">✕ Clear</button></div>
+      <div class="rhint">Each cell wires a source's output into a target's input. Green = connected. Watch the emit meters drive each other.</div>
+    </div>
+    <div class="lbl solo-only">Knobs</div>
+    <div id="knobs"></div>
+    <div class="lbl">Actions</div>
+    <button class="btn" id="btn-reseed">⟳ Reseed</button>
+    <div class="btnrow solo-only"><button class="btn warm" id="btn-save">★ Save to library</button></div>
+    <div class="btnrow"><button class="btn solo-only" id="btn-link">⧉ Copy link</button><button class="btn" id="btn-png">▣ PNG</button></div>
+    <button class="btn" id="btn-rec">● Record video</button>
+  </div>
+
+  <!-- LIBRARY -->
+  <div class="library">
+    <div class="libsec saved">
+      <div class="libhead"><div class="lbl">Library · saved runs</div><div class="hint" id="lib-count" style="margin:0"></div></div>
+      <div class="strip" id="lib-strip"><div class="empty">Save a run (★) to start a library. Select two of the same system to breed.</div></div>
+    </div>
+    <div class="libsec breed">
+      <div class="libhead"><div class="lbl">Breed</div>
+        <button class="btn" id="btn-breed" style="width:auto; margin:0; padding:6px 12px" disabled>⚭ Breed 2 parents</button></div>
+      <div class="strip" id="breed-strip"><div class="empty" id="breed-empty">Select two saved runs of the SAME system. Offspring appear here — click to load one.</div></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<!-- ═══════════════ SUBSTRATE CORE + reference cartridge ═══════════════ -->
+<script>
+(function () {
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function makeNoise(seed) {
+    const r = mulberry32(seed || 1); const p = new Uint8Array(512);
+    const perm = Array.from({ length: 256 }, (_, i) => i);
+    for (let i = 255; i > 0; i--) { const j = (r() * (i + 1)) | 0; const t = perm[i]; perm[i] = perm[j]; perm[j] = t; }
+    for (let i = 0; i < 512; i++) p[i] = perm[i & 255];
+    const fade = t => t * t * t * (t * (t * 6 - 15) + 10);
+    const lerp = (a, b, t) => a + t * (b - a);
+    const grad = (h, x, y) => ((h & 1) ? -x : x) + ((h & 2) ? -y : y);
+    return (x, y) => {
+      const X = Math.floor(x) & 255, Y = Math.floor(y) & 255;
+      x -= Math.floor(x); y -= Math.floor(y);
+      const u = fade(x), v = fade(y);
+      const aa = p[p[X] + Y], ab = p[p[X] + Y + 1], ba = p[p[X + 1] + Y], bb = p[p[X + 1] + Y + 1];
+      return lerp(lerp(grad(aa, x, y), grad(ba, x - 1, y), u),
+                  lerp(grad(ab, x, y - 1), grad(bb, x - 1, y - 1), u), v);
+    };
+  }
+  const registry = [];
+  window.Substrate = {
+    register(def) { registry.push(def); if (window.__studioBooted) window.__rackAppend(def); },
+    _registry: registry, rng: mulberry32, noise2D: makeNoise,
+  };
+
+  Substrate.register({
+    id: 'calibration', name: 'Calibration Field', blurb: 'reference cartridge · thermal ramp',
+    params: {
+      bands:  { label: 'Bands',  min: 2, max: 40, step: 1, default: 12, int: true },
+      speed:  { label: 'Drift',  min: 0, max: 3,  step: 0.01, default: 0.6 },
+      warp:   { label: 'Warp',   min: 0, max: 2,  step: 0.01, default: 0.7 },
+      grain:  { label: 'Sparks', min: 0, max: 1200, step: 20, default: 400, int: true },
+    },
+    create({ canvas, dpr, params, seed, Substrate }) {
+      const ctx = canvas.getContext('2d');
+      let noise = Substrate.noise2D(seed); let sparks = [], sd = seed, t = 0;
+      const ramp = [[27,77,62],[42,157,143],[0,255,156],[212,160,23],[255,123,0],[255,77,0]];
+      function col(u){ u=Math.max(0,Math.min(1,u))*(ramp.length-1); const i=u|0, f=u-i;
+        const a=ramp[i], b=ramp[Math.min(i+1,ramp.length-1)];
+        return `rgb(${a[0]+(b[0]-a[0])*f|0},${a[1]+(b[1]-a[1])*f|0},${a[2]+(b[2]-a[2])*f|0})`; }
+      function buildSparks(){ const r=Substrate.rng(sd); sparks=[];
+        for(let i=0;i<params.grain;i++) sparks.push({x:r(),y:r(),p:r()}); }
+      buildSparks(); let lastGrain = params.grain;
+      return {
+        step(dt){ t += dt*0.001*params.speed;
+          if(params.grain!==lastGrain){ lastGrain=params.grain; buildSparks(); }
+          const W=canvas.width, H=canvas.height;
+          for(let y=0;y<H;y+=4){ const wv = noise(y*0.004*params.warp, t)*0.5;
+            const u=(y/H+wv+t*0.05)%1; const band=Math.floor(u*params.bands)/params.bands;
+            ctx.fillStyle=col(band); ctx.fillRect(0,y,W,4); }
+          ctx.globalCompositeOperation='lighter';
+          for(const s of sparks){ const px=(s.x*W), py=((s.y+t*0.02*s.p)%1)*H;
+            ctx.fillStyle=col(0.8+s.p*0.2); ctx.fillRect(px,py,2*dpr,2*dpr); }
+          ctx.globalCompositeOperation='source-over'; },
+        reseed(ns){ sd=ns; noise=Substrate.noise2D(ns); buildSparks(); t=0; },
+        readouts(){ return { BANDS:params.bands, T:t.toFixed(1), SPARKS:sparks.length }; },
+      };
+    },
+  });
+})();
+</script>
+
+<!-- CARTRIDGES -->
+<script src="cartridges/01-flowfield.js"></script>
+<script src="cartridges/02-reaction-diffusion.js"></script>
+<script src="cartridges/03-homeostat.js"></script>
+<script src="cartridges/04-lenia.js"></script>
+<script src="cartridges/05-physarum.js"></script>
+<script src="cartridges/06-circuitry.js"></script>
+<script src="cartridges/07-murmuration.js"></script>
+<script src="cartridges/08-attractor.js"></script>
+<script src="cartridges/09-cyclic.js"></script>
+<script src="cartridges/10-kuramoto.js"></script>
+<script src="cartridges/11-diffgrowth.js"></script>
+<script src="cartridges/12-ising.js"></script>
+<script src="cartridges/13-chladni.js"></script>
+<script src="cartridges/14-fluid.js"></script>
+<script src="cartridges/15-life.js"></script>
+
+<!-- ═══════════════ STUDIO SHELL ═══════════════ -->
+<script>
+(function () {
+  const $ = s => document.querySelector(s);
+  const rackEl=$('#rack'), knobsEl=$('#knobs'), host=$('#canvas-host'), chost=$('#couple-host');
+  const readoutsEl=$('#readouts'), hudT=$('#hud-t'), hudB=$('#hud-b');
+  const reg = window.Substrate._registry;
+  const byId = id => reg.find(d => d.id === id);
+  const clamp01 = v => (typeof v==='number' && isFinite(v)) ? (v<0?0:v>1?1:v) : 0.5;
+
+  const COUPLE_IDS = ['flowfield','reaction-diffusion','homeostat','lenia'];
+  const SHORT = { flowfield:'FL', 'reaction-diffusion':'RX', homeostat:'HO', lenia:'LE' };
+
+  let mode='solo';
+  let active=null;           // solo state
+  let couple=null;           // couple state
+  let raf=0, last=0, readClock=0, lastSoloDef=null;
+
+  function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show');
+    clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'),1400); }
+  function stopLoop(){ if(raf) cancelAnimationFrame(raf); raf=0; }
+
+  function sizeCanvasTo(c, w, h){ const dpr=Math.min(window.devicePixelRatio||1,2);
+    c.width=Math.floor(w*dpr); c.height=Math.floor(h*dpr); return dpr; }
+
+  // ═══════════ SOLO ═══════════
+  function makeCanvas(){ const c=document.createElement('canvas'); host.innerHTML=''; host.appendChild(c); return c; }
+  function buildKnobs(def, params){
+    knobsEl.innerHTML='';
+    const keys=Object.keys(def.params||{});
+    if(!keys.length){ knobsEl.innerHTML='<div class="hint">No knobs on this cartridge.</div>'; return; }
+    for(const key of keys){
+      const p=def.params[key]; const wrap=document.createElement('div'); wrap.className='knob';
+      const head=document.createElement('div'); head.className='kh';
+      const nm=document.createElement('span'); nm.textContent=p.label||key;
+      const val=document.createElement('span'); val.className='kv';
+      const fmt=v=>p.int?(v|0):(+v).toFixed(2); val.textContent=fmt(params[key]);
+      head.appendChild(nm); head.appendChild(val);
+      const inp=document.createElement('input'); inp.type='range';
+      inp.min=p.min; inp.max=p.max; inp.step=p.step; inp.value=params[key];
+      inp.addEventListener('input',()=>{ params[key]=p.int?(+inp.value|0):+inp.value; val.textContent=fmt(params[key]); scheduleHash(); });
+      wrap.appendChild(head); wrap.appendChild(inp); knobsEl.appendChild(wrap);
+    }
+  }
+  function load(def, opts){
+    opts = opts || {}; mode='solo'; document.body.classList.remove('couple'); disposeCouple();
+    setModeButtons();
+    stopLoop(); lastSoloDef=def;
+    if(active && active.instance && active.instance.dispose){ try{active.instance.dispose();}catch(e){} }
+    document.querySelectorAll('.cart').forEach(el=>el.classList.toggle('active', el.dataset.id===def.id));
+    const params={};
+    for(const [k,p] of Object.entries(def.params||{})) params[k]=(opts.params && k in opts.params)?opts.params[k]:p.default;
+    const seed=(opts.seed!=null)?opts.seed:((Math.random()*1e9)|0);
+    const canvas=makeCanvas(); const dpr=sizeCanvasTo(canvas, host.clientWidth, host.clientHeight);
+    let instance;
+    try{ instance=def.create({canvas,width:canvas.width,height:canvas.height,dpr,params,seed,Substrate:window.Substrate}); }
+    catch(e){ hudT.textContent=def.name; hudB.textContent='ERROR: '+e.message; console.error('[studio]',def.id,e); return; }
+    active={def,instance,params,canvas,seed};
+    buildKnobs(def,params);
+    hudT.textContent=def.name; hudB.textContent=def.blurb||'';
+    last=performance.now(); readClock=0;
+    const loop=now=>{ const dt=Math.min(now-last,60); last=now;
+      try{ instance.step(dt); }catch(e){ hudB.textContent='step error: '+e.message; console.error(e); return; }
+      readClock+=dt;
+      if(readClock>300 && instance.readouts){ readClock=0; const r=instance.readouts();
+        readoutsEl.innerHTML=Object.entries(r).map(([k,v])=>`${k} <b>${v}</b>`).join('<br>'); }
+      raf=requestAnimationFrame(loop); };
+    raf=requestAnimationFrame(loop);
+    if(!opts.silent) scheduleHash();
+  }
+
+  // ═══════════ COUPLE ═══════════
+  function disposeCouple(){ if(!couple) return;
+    for(const c of couple.cells){ if(c.instance && c.instance.dispose){ try{c.instance.dispose();}catch(e){} } }
+    couple=null; chost.innerHTML='';
+  }
+  function enterCouple(){
+    mode='couple'; stopLoop();
+    if(active && active.instance && active.instance.dispose){ try{active.instance.dispose();}catch(e){} }
+    active=null; document.body.classList.add('couple'); setModeButtons();
+    document.querySelectorAll('.cart').forEach(el=>el.classList.remove('active'));
+    disposeCouple(); chost.innerHTML='';
+    const cells=[];
+    const cw=chost.clientWidth/2, ch=chost.clientHeight/2;
+    for(const id of COUPLE_IDS){ const def=byId(id); if(!def) continue;
+      const cell=document.createElement('div'); cell.className='ccell';
+      const cv=document.createElement('canvas'); cell.appendChild(cv);
+      const lab=document.createElement('div'); lab.className='clab'; lab.textContent=def.name; cell.appendChild(lab);
+      const meter=document.createElement('div'); meter.className='cmeter'; const bar=document.createElement('i'); meter.appendChild(bar); cell.appendChild(meter);
+      const inTag=document.createElement('div'); inTag.className='cin'; cell.appendChild(inTag);
+      chost.appendChild(cell);
+      const dpr=sizeCanvasTo(cv, cw, ch);
+      const params={}; for(const [k,p] of Object.entries(def.params||{})) params[k]=p.default;
+      const seed=(Math.random()*1e9)|0;
+      let inst; try{ inst=def.create({canvas:cv,width:cv.width,height:cv.height,dpr,params,seed,Substrate:window.Substrate}); }
+      catch(e){ console.error('[couple]',id,e); continue; }
+      cells.push({def,instance:inst,params,canvas:cv,seed,bar,inTag,wasCoupled:false});
+    }
+    couple={cells, matrix:new Set(), strength:+$('#str').value};
+    buildMatrix(); wireLoopPreset();   // start pre-wired so it breathes immediately
+    last=performance.now();
+    const loop=now=>{ const dt=Math.min(now-last,60); last=now; coupleStep(dt); raf=requestAnimationFrame(loop); };
+    raf=requestAnimationFrame(loop);
+  }
+  function coupleStep(dt){
+    if(!couple) return;
+    // 1) gather emits
+    const emit={};
+    for(const c of couple.cells){ const e = c.instance.emit ? clamp01(c.instance.emit()) : 0.5;
+      emit[c.def.id]=e; if(c.bar) c.bar.style.width=(e*100).toFixed(0)+'%'; }
+    // 2) route emit -> absorb
+    for(const c of couple.cells){ const tid=c.def.id;
+      const srcs=couple.cells.filter(s=>s.def.id!==tid && couple.matrix.has(s.def.id+'>'+tid));
+      if(srcs.length && c.instance.absorb){
+        let sum=0; for(const s of srcs) sum+=emit[s.def.id];
+        const comb=sum/srcs.length; const sent=0.5+(comb-0.5)*couple.strength;
+        c.instance.absorb(sent); c.wasCoupled=true;
+        if(c.inTag) c.inTag.textContent='◀ '+srcs.map(s=>SHORT[s.def.id]).join(' ');
+      } else {
+        if(c.wasCoupled && c.instance.absorb){ try{c.instance.absorb(null);}catch(e){} }
+        c.wasCoupled=false; if(c.inTag) c.inTag.textContent='';
+      }
+    }
+    // 3) step all
+    for(const c of couple.cells){ try{ c.instance.step(dt); }catch(e){ console.error(c.def.id,e); } }
+  }
+  function buildMatrix(){
+    const m=$('#matrix'); m.innerHTML='';
+    const corner=document.createElement('div'); corner.className='mx-corner'; corner.innerHTML='FROM<br>↓ TO→'; m.appendChild(corner);
+    for(const t of COUPLE_IDS){ const h=document.createElement('div'); h.className='mx-h'; h.textContent=SHORT[t]; m.appendChild(h); }
+    for(const s of COUPLE_IDS){
+      const rh=document.createElement('div'); rh.className='mx-rh'; rh.textContent=SHORT[s]; m.appendChild(rh);
+      for(const t of COUPLE_IDS){
+        const cell=document.createElement('div');
+        if(s===t){ cell.className='mx-cell diag'; }
+        else { const key=s+'>'+t; cell.className='mx-cell'+(couple&&couple.matrix.has(key)?' on':'');
+          cell.title=SHORT[s]+' → '+SHORT[t];
+          cell.addEventListener('click',()=>{ if(!couple) return;
+            if(couple.matrix.has(key)) couple.matrix.delete(key); else couple.matrix.add(key);
+            cell.classList.toggle('on'); }); }
+        m.appendChild(cell);
+      }
+    }
+  }
+  function wireLoopPreset(){ if(!couple) return; couple.matrix.clear();
+    for(let i=0;i<COUPLE_IDS.length;i++){ const a=COUPLE_IDS[i], b=COUPLE_IDS[(i+1)%COUPLE_IDS.length]; couple.matrix.add(a+'>'+b); }
+    buildMatrix(); }
+  function clearPreset(){ if(!couple) return; couple.matrix.clear();
+    for(const c of couple.cells){ if(c.wasCoupled && c.instance.absorb){ try{c.instance.absorb(null);}catch(e){} } c.wasCoupled=false; }
+    buildMatrix(); }
+
+  function setModeButtons(){ $('#mode-solo').classList.toggle('on', mode==='solo'); $('#mode-couple').classList.toggle('on', mode==='couple'); }
+  $('#mode-solo').addEventListener('click',()=>{ if(mode==='solo') return; load(lastSoloDef||reg[0]); });
+  $('#mode-couple').addEventListener('click',()=>{ if(mode==='couple') return; enterCouple(); });
+  $('#str').addEventListener('input',()=>{ $('#str-val').textContent=(+$('#str').value).toFixed(2); if(couple) couple.strength=+$('#str').value; });
+  $('#btn-loop').addEventListener('click',wireLoopPreset);
+  $('#btn-clear').addEventListener('click',clearPreset);
+
+  // ═══════════ rack ═══════════
+  window.__rackAppend=def=>{ const b=document.createElement('button');
+    b.className='cart'; b.dataset.id=def.id;
+    b.innerHTML=`<div class="cn">${def.name}</div><div class="cb">${def.blurb||''}</div>`;
+    b.addEventListener('click',()=>load(def)); rackEl.appendChild(b); };
+  reg.forEach(window.__rackAppend); window.__studioBooted=true;
+
+  // ═══════════ permalink ═══════════
+  function encodeState(){ if(!active) return '';
+    return encodeURIComponent(JSON.stringify({id:active.def.id, seed:active.seed, p:active.params})); }
+  function applyHash(){ const h=location.hash.slice(1); if(!h) return false;
+    try{ const o=JSON.parse(decodeURIComponent(h)); const def=byId(o.id); if(!def) return false;
+      load(def,{params:o.p,seed:o.seed,silent:true}); return true; }catch(e){ return false; } }
+  let hashTimer=0;
+  function scheduleHash(){ if(mode!=='solo') return; clearTimeout(hashTimer);
+    hashTimer=setTimeout(()=>{ try{ history.replaceState(null,'','#'+encodeState()); }catch(e){} },200); }
+
+  // ═══════════ library + breeding ═══════════
+  const LKEY='equilibria.saved.v1';
+  const loadSaved=()=>{ try{return JSON.parse(localStorage.getItem(LKEY)||'[]');}catch(e){return [];} };
+  const putSaved=arr=>localStorage.setItem(LKEY, JSON.stringify(arr.slice(0,40)));
+  function thumbOf(canvas){ const tw=118, th=72; const t=document.createElement('canvas');
+    t.width=tw; t.height=th; const c=t.getContext('2d'); c.fillStyle='#0a0e0b'; c.fillRect(0,0,tw,th);
+    try{ c.drawImage(canvas,0,0,tw,th);}catch(e){} return t.toDataURL('image/jpeg',0.72); }
+  function saveCurrent(){ if(mode!=='solo'||!active){ toast('switch to SOLO to save'); return; }
+    const arr=loadSaved();
+    arr.unshift({ k:String(Date.now())+((Math.random()*1e4)|0), id:active.def.id, name:active.def.name,
+      seed:active.seed, params:JSON.parse(JSON.stringify(active.params)), thumb:thumbOf(active.canvas) });
+    putSaved(arr); renderLibrary(); toast('saved to library'); }
+
+  let selKeys=[];
+  function renderLibrary(){
+    const arr=loadSaved(); const strip=$('#lib-strip'); $('#lib-count').textContent=arr.length?arr.length+' saved':'';
+    if(!arr.length){ strip.innerHTML='<div class="empty">Save a run (★) to start a library. Select two of the same system to breed.</div>'; selKeys=[]; updateBreedBtn(); return; }
+    strip.innerHTML='';
+    for(const it of arr){
+      const el=document.createElement('div'); el.className='thumb'+(selKeys.includes(it.k)?' sel':''); el.dataset.k=it.k;
+      el.innerHTML=`<img src="${it.thumb}" alt=""><div class="meta">${it.name}</div><div class="del">✕</div>`;
+      el.querySelector('img').addEventListener('click',()=>{ const def=byId(it.id); if(def) load(def,{params:it.params,seed:it.seed}); });
+      el.querySelector('.meta').addEventListener('click',()=>toggleSel(it.k));
+      el.addEventListener('click',ev=>{ if(ev.target.classList.contains('del')) delSaved(it.k); });
+      strip.appendChild(el);
+    }
+    updateBreedBtn();
+  }
+  function delSaved(k){ putSaved(loadSaved().filter(x=>x.k!==k)); selKeys=selKeys.filter(x=>x!==k); renderLibrary(); }
+  function toggleSel(k){ if(selKeys.includes(k)) selKeys=selKeys.filter(x=>x!==k);
+    else { selKeys.push(k); if(selKeys.length>2) selKeys.shift(); } renderLibrary(); }
+  function updateBreedBtn(){ const arr=loadSaved(); const chosen=selKeys.map(k=>arr.find(x=>x.k===k)).filter(Boolean);
+    const ok = chosen.length===2 && chosen[0].id===chosen[1].id; const btn=$('#btn-breed'); btn.disabled=!ok;
+    btn.textContent = chosen.length===2 && !ok ? '⚭ same system only' : '⚭ Breed 2 parents'; }
+  function breed(){
+    const arr=loadSaved(); const [a,b]=selKeys.map(k=>arr.find(x=>x.k===k));
+    if(!a||!b||a.id!==b.id) return; const def=byId(a.id); if(!def) return;
+    const rng=Substrate.rng((a.seed^b.seed^Date.now())>>>0);
+    const offspring=[];
+    for(let n=0;n<6;n++){ const p={};
+      for(const [key,spec] of Object.entries(def.params||{})){
+        const av=a.params[key], bv=b.params[key];
+        let v = rng()<0.4 ? (rng()<0.5?av:bv) : av + (bv-av)*rng();
+        if(rng()<0.5){ v += (rng()*2-1)*(spec.max-spec.min)*0.12; }
+        v=Math.max(spec.min,Math.min(spec.max,v)); if(spec.int) v=Math.round(v); p[key]=v;
+      }
+      offspring.push({ params:p, seed:(rng()<0.5?a.seed:b.seed) });
+    }
+    const strip=$('#breed-strip'); strip.innerHTML='';
+    offspring.forEach((o,i)=>{ const el=document.createElement('div'); el.className='chip';
+      const keys=Object.keys(def.params||{}).slice(0,3);
+      const hint=keys.map(k=>`${k}:${def.params[k].int?o.params[k]:(+o.params[k]).toFixed(2)}`).join('<br>');
+      el.innerHTML=`<div class="cn">◆ O${i+1}</div><div class="cd">${hint}</div>`;
+      el.addEventListener('click',()=>{ load(def,{params:o.params,seed:o.seed}); toast('loaded offspring O'+(i+1)); });
+      strip.appendChild(el); });
+    toast('bred 6 offspring — click one');
+  }
+
+  // ═══════════ actions ═══════════
+  $('#btn-reseed').addEventListener('click',()=>{
+    if(mode==='couple' && couple){ for(const c of couple.cells){ const ns=(Math.random()*1e9)|0; c.seed=ns; if(c.instance.reseed) c.instance.reseed(ns); } toast('reseeded all'); return; }
+    if(!active) return; const ns=(Math.random()*1e9)|0; active.seed=ns;
+    if(active.instance.reseed) active.instance.reseed(ns); else load(active.def,{params:active.params,seed:ns}); scheduleHash(); });
+  $('#btn-save').addEventListener('click',saveCurrent);
+  $('#btn-link').addEventListener('click',()=>{ if(mode!=='solo'){toast('switch to SOLO');return;} scheduleHash();
+    const url=location.href.split('#')[0]+'#'+encodeState();
+    (navigator.clipboard?navigator.clipboard.writeText(url):Promise.reject())
+      .then(()=>toast('link copied')).catch(()=>{ history.replaceState(null,'','#'+encodeState()); toast('link in address bar'); }); });
+  $('#btn-png').addEventListener('click',()=>{
+    let url;
+    if(mode==='couple' && couple){ url=compositeCouple(); if(!url){ toast('nothing to export'); return; } }
+    else if(active){ url=active.canvas.toDataURL('image/png'); } else return;
+    const a=document.createElement('a'); a.download=`equilibria-${mode==='couple'?'coupled':active.def.id}-${Date.now()}.png`; a.href=url; a.click(); });
+  $('#btn-breed').addEventListener('click',breed);
+  function compositeCouple(){ const cs=couple.cells; if(!cs.length) return null;
+    const cw=cs[0].canvas.width, ch=cs[0].canvas.height;
+    const big=document.createElement('canvas'); big.width=cw*2; big.height=ch*2;
+    const g=big.getContext('2d'); g.fillStyle='#0a0e0b'; g.fillRect(0,0,big.width,big.height);
+    cs.forEach((c,i)=>{ const col=i%2, row=(i/2)|0; try{ g.drawImage(c.canvas, col*cw, row*ch, cw, ch);}catch(e){} });
+    return big.toDataURL('image/png'); }
+
+  let rec=null, chunks=[];
+  $('#btn-rec').addEventListener('click',()=>{ const btn=$('#btn-rec');
+    if(rec){ rec.stop(); return; }
+    if(mode==='couple'){ toast('record is SOLO-only (use PNG to grab the grid)'); return; }
+    if(!active||!active.canvas.captureStream){ toast('recording unsupported'); return; }
+    let stream; try{ stream=active.canvas.captureStream(60); }catch(e){ toast('capture failed'); return; }
+    try{ rec=new MediaRecorder(stream,{mimeType:'video/webm'}); }catch(e){ toast('MediaRecorder n/a'); return; }
+    chunks=[]; rec.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); };
+    rec.onstop=()=>{ const blob=new Blob(chunks,{type:'video/webm'}); const a=document.createElement('a');
+      a.download=`equilibria-${active.def.id}-${Date.now()}.webm`; a.href=URL.createObjectURL(blob); a.click();
+      btn.classList.remove('rec-on'); btn.textContent='● Record video'; rec=null; };
+    rec.start(); btn.classList.add('rec-on'); btn.textContent='■ Stop recording'; });
+
+  // ═══════════ commission ═══════════
+  const QKEY='equilibria.commissions';
+  $('#btn-queue').addEventListener('click',()=>{ const t=$('#commission').value.trim(); if(!t) return;
+    const q=JSON.parse(localStorage.getItem(QKEY)||'[]'); q.unshift(t);
+    localStorage.setItem(QKEY,JSON.stringify(q.slice(0,12))); $('#commission').value=''; toast('queued for agent'); });
+
+  // ═══════════ resize + boot ═══════════
+  window.addEventListener('resize',()=>{
+    if(mode==='couple' && couple){ const cw=chost.clientWidth/2, ch=chost.clientHeight/2;
+      for(const c of couple.cells){ const d=sizeCanvasTo(c.canvas,cw,ch); if(c.instance.resize) c.instance.resize(c.canvas.width,c.canvas.height,d); } }
+    else if(active){ const d=sizeCanvasTo(active.canvas, host.clientWidth, host.clientHeight);
+      if(active.instance.resize) active.instance.resize(active.canvas.width,active.canvas.height,d); } });
+  renderLibrary(); setModeButtons();
+  if(!applyHash() && reg.length) load(reg[0]);
+})();
+</script>
+</body>
+</html>

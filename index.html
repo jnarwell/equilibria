@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>EQUILIBRIA — generative studies in thermodynamic equilibrium</title>
+<style>
+  :root {
+    /* thermal -> verdant palette (shared across all pieces) */
+    --bg:        #0a0e0b;
+    --bg-warm:   #0c1110;
+    --hot:       #ff4d00;
+    --amber:     #ff7b00;
+    --gold:      #d4a017;
+    --verdigris: #2a9d8f;
+    --deep:      #1b4d3e;
+    --phosphor:  #00ff9c;
+    --ink:       #cfeede;
+    --dim:       #6f8c80;
+    --mono: 'IBM Plex Mono','SF Mono',ui-monospace,'Menlo',monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); }
+  body {
+    font-family: var(--mono);
+    min-height: 100vh;
+    background:
+      radial-gradient(1200px 700px at 18% -10%, rgba(255,123,0,0.10), transparent 60%),
+      radial-gradient(1100px 800px at 90% 120%, rgba(42,157,143,0.12), transparent 60%),
+      var(--bg);
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  /* CRT scanlines + vignette overlay (shared cyberdeck motif) */
+  body::before {
+    content: "";
+    position: fixed; inset: 0; pointer-events: none; z-index: 9;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(0,0,0,0) 0px,
+      rgba(0,0,0,0) 2px,
+      rgba(0,0,0,0.16) 3px,
+      rgba(0,0,0,0) 4px);
+    mix-blend-mode: multiply;
+  }
+  body::after {
+    content: "";
+    position: fixed; inset: 0; pointer-events: none; z-index: 8;
+    box-shadow: inset 0 0 220px rgba(0,0,0,0.75);
+  }
+
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 6vh 28px 12vh; position: relative; z-index: 1; }
+
+  .topbar {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--dim); border-bottom: 1px solid rgba(42,157,143,0.25);
+    padding-bottom: 10px; margin-bottom: 8vh;
+  }
+  .topbar .loop { color: var(--phosphor); text-shadow: 0 0 8px rgba(0,255,156,0.5); }
+
+  h1 {
+    font-size: clamp(34px, 7vw, 78px);
+    line-height: 0.96; margin: 0 0 4px; font-weight: 600;
+    letter-spacing: 0.02em;
+    background: linear-gradient(100deg, var(--amber), var(--gold) 40%, var(--verdigris) 80%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .sub {
+    font-size: 12px; letter-spacing: 0.32em; text-transform: uppercase;
+    color: var(--dim); margin: 0 0 5vh;
+  }
+
+  .manifesto {
+    max-width: 720px; font-size: 15px; line-height: 1.85; color: var(--ink);
+    margin-bottom: 7vh;
+  }
+  .manifesto p { margin: 0 0 1.1em; }
+  .manifesto .lead { color: #eafff5; }
+  .manifesto b { color: var(--amber); font-weight: 600; }
+  .manifesto .v { color: var(--verdigris); font-weight: 600; }
+  .gradline {
+    height: 3px; width: 100%; border-radius: 2px; margin: 6vh 0;
+    background: linear-gradient(90deg, var(--hot), var(--amber) 22%, var(--gold) 45%, var(--verdigris) 78%, var(--deep));
+    box-shadow: 0 0 24px rgba(255,123,0,0.25), 0 0 30px rgba(42,157,143,0.25);
+  }
+
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+  @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+
+  a.card {
+    display: block; text-decoration: none; color: inherit;
+    border: 1px solid rgba(42,157,143,0.28);
+    background: linear-gradient(180deg, rgba(20,28,24,0.6), rgba(10,14,11,0.6));
+    border-radius: 10px; padding: 22px 22px 20px; position: relative;
+    transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+    overflow: hidden;
+  }
+  a.card::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: linear-gradient(180deg, var(--amber), var(--verdigris));
+    opacity: 0.8;
+  }
+  a.card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(0,255,156,0.55);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5), 0 0 26px rgba(42,157,143,0.18);
+  }
+  .card .idx { font-size: 11px; letter-spacing: 0.2em; color: var(--dim); }
+  .card h3 {
+    margin: 6px 0 4px; font-size: 19px; letter-spacing: 0.04em;
+    color: #eafff5; font-weight: 600;
+  }
+  .card .tag {
+    font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--amber); margin-bottom: 12px;
+  }
+  .card p { margin: 0; font-size: 13px; line-height: 1.65; color: var(--dim); }
+  .card .enter {
+    margin-top: 16px; font-size: 11px; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--phosphor);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card .enter::after { content: "\2192"; transition: transform 160ms ease; }
+  a.card:hover .enter::after { transform: translateX(5px); }
+
+  /* tiny ascii glyph strip per card, colored by theme */
+  .glyph { font-size: 11px; line-height: 1.3; color: var(--verdigris); opacity: 0.7; margin: 10px 0 0; white-space: pre; }
+
+  footer {
+    margin-top: 9vh; padding-top: 18px; border-top: 1px solid rgba(42,157,143,0.2);
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim);
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+  }
+  footer .pal { display: inline-flex; gap: 4px; vertical-align: middle; }
+  footer .sw { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <span>EQUILIBRIA // GENERATIVE STUDIES</span>
+      <span class="loop">SYSTEM: CLOSED &nbsp;•&nbsp; STATE: IN-BALANCE</span>
+    </div>
+
+    <h1>EQUILIBRIA</h1>
+    <p class="sub">cyberdeck &nbsp;×&nbsp; solarpunk &nbsp;×&nbsp; thermodynamic equilibrium</p>
+
+    <div class="manifesto">
+      <p class="lead">Four machines, each held in dynamic balance. Not pictures of equilibrium —
+      systems that <i>are</i> equilibrium, running forever, conserving what they spend.</p>
+
+      <p>The premise is a coalition — <b>technology</b>, <b>capital</b>, <span class="v">politics</span>,
+      <span class="v">welfare</span> — bound to one task: the continuous rebalancing of society through
+      developed abundance and return. <b>Energy dissipated is recaptured.</b>
+      <span class="v">Material discarded is returned.</span> Solar, distributed manufacture, closed loops.
+      Not a utopia — a <i>framework</i> for moving past need.</p>
+
+      <p>The aesthetic is the argument. <b>Amber</b> is dissipation, heat, the cyberdeck's salvaged glow.
+      <span class="v">Verdigris</span> is capture, life, the solarpunk return. Every piece runs that
+      gradient as a metabolism: born hot, cooled, recaptured, reborn. The terminal annotates the garden.
+      The idea is the machine that makes the art.</p>
+    </div>
+
+    <a href="studio.html" style="display:inline-block; margin:1vh 0 1.5vh; padding:16px 32px; border:1px solid var(--phos); border-radius:8px; color:var(--phos); text-decoration:none; font-size:15px; letter-spacing:0.14em; text-transform:uppercase; box-shadow:0 0 26px rgba(0,255,156,0.16);">▶ Launch the Studio — 16 live systems</a>
+    <div style="font-size:11px; color:var(--dim); letter-spacing:0.1em; margin-bottom:1vh;">operate, breed, couple, and record generative systems in the browser. the four pieces below are the standalone originals.</div>
+
+    <div class="gradline"></div>
+
+    <div class="grid">
+      <a class="card" href="01-exergy-flowfield.html">
+        <div class="idx">01 / FLOW</div>
+        <h3>Exergy Flowfield</h3>
+        <div class="tag">conservation · advection</div>
+        <p>Particles born hot at a source drift a noise field, cooling amber→verdant, then recaptured and
+        reinjected. Count conserved. The loop is the motion.</p>
+        <div class="glyph">·∴⁰ ↗  ˚∘·. → ↙ recapture</div>
+        <div class="enter">enter system</div>
+      </a>
+
+      <a class="card" href="02-reaction-diffusion.html">
+        <div class="idx">02 / METABOLISM</div>
+        <h3>Reaction–Diffusion</h3>
+        <div class="tag">gray-scott · dissipative order</div>
+        <p>A living membrane self-organizes from constant feed and kill. Order from dissipation, settling
+        into steady mass — coral that never stops breathing.</p>
+        <div class="glyph">◜◝ ⊂◯⊃ ◟◞  mass:STEADY</div>
+        <div class="enter">enter system</div>
+      </a>
+
+      <a class="card" href="03-societal-homeostat.html">
+        <div class="idx">03 / CONTROL</div>
+        <h3>Societal Homeostat</h3>
+        <div class="tag">four reservoirs · negative feedback</div>
+        <p>Tech, capital, polity, welfare as coupled tanks trading conserved flows. Perturb it and it flares
+        amber, then corrects back to verdant. The coalition as a thermostat.</p>
+        <div class="glyph">▰▰▱ ⇄ ▰▱▱  err→0 ⟳</div>
+        <div class="enter">enter system</div>
+      </a>
+
+      <a class="card" href="04-lenia.html">
+        <div class="idx">04 / LIFE</div>
+        <h3>Lenia</h3>
+        <div class="tag">continuous automata · self-sustaining</div>
+        <p>Soft luminous organisms emerge from one smooth update rule — moving, holding form, refusing to
+        dissolve. Equilibrium as something alive.</p>
+        <div class="glyph">⟪((◍))⟫  self-sustaining</div>
+        <div class="enter">enter system</div>
+      </a>
+    </div>
+
+    <footer>
+      <span>GENERATIVE · VANILLA · OFFLINE · NO-DEPENDENCY</span>
+      <span class="pal">PALETTE
+        <i class="sw" style="background:#ff4d00"></i>
+        <i class="sw" style="background:#ff7b00"></i>
+        <i class="sw" style="background:#d4a017"></i>
+        <i class="sw" style="background:#2a9d8f"></i>
+        <i class="sw" style="background:#1b4d3e"></i>
+        <i class="sw" style="background:#00ff9c"></i>
+      </span>
+    </footer>
+  </div>
+</body>
+</html>
