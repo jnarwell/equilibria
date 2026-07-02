@@ -25,35 +25,21 @@
 
   const TWO_PI = Math.PI * 2;
 
-  // --- thermal -> verdant palette LUT, indexed by phase (0..2pi mapped 0..1) ---
-  const STOPS = [
-    [0.00, [27, 77, 62]],     // deep verdant   #1b4d3e
-    [0.20, [42, 157, 143]],   // verdigris      #2a9d8f
-    [0.40, [0, 255, 156]],    // phosphor       #00ff9c
-    [0.60, [212, 160, 23]],   // warm gold      #d4a017
-    [0.80, [255, 123, 0]],    // amber          #ff7b00
-    [1.00, [255, 77, 0]],     // hottest        #ff4d00
-  ];
-  const LUT = new Uint8ClampedArray(256 * 3);
-  for (let i = 0; i < 256; i++) {
-    const t = i / 255;
-    let a = STOPS[0], b = STOPS[STOPS.length - 1];
-    for (let s = 1; s < STOPS.length; s++) {
-      if (t <= STOPS[s][0]) { a = STOPS[s - 1]; b = STOPS[s]; break; }
-    }
-    const f = (t - a[0]) / (b[0] - a[0] || 1);
-    LUT[i * 3]     = a[1][0] + (b[1][0] - a[1][0]) * f;
-    LUT[i * 3 + 1] = a[1][1] + (b[1][1] - a[1][1]) * f;
-    LUT[i * 3 + 2] = a[1][2] + (b[1][2] - a[1][2]) * f;
-  }
-  function phaseColor(theta) {
+  // --- COLOR SOURCE: studio GLOBAL generative palette ---
+  // Colour comes from window.Substrate.rampLUT() (256-entry RGB LUT for t in
+  // [0,1]); the default palette is thermal -> verdant so the base look is
+  // unchanged, while shuffle/drift recolours live. rampLUT() is fetched ONCE
+  // per frame in render() and the cached LUT is threaded into phaseColor() —
+  // never called per cell. The phase -> t mapping (t = phase / 2pi) and the
+  // wrap + index math are preserved exactly.
+  function phaseColor(theta, lut) {
     // wrap theta into [0,2pi) then index the ramp
     let u = theta / TWO_PI;
     u -= Math.floor(u);
     let idx = (u * 256) | 0;
     if (idx > 255) idx = 255; else if (idx < 0) idx = 0;
     idx *= 3;
-    return 'rgb(' + LUT[idx] + ',' + LUT[idx + 1] + ',' + LUT[idx + 2] + ')';
+    return 'rgb(' + lut[idx] + ',' + lut[idx + 1] + ',' + lut[idx + 2] + ')';
   }
 
   Substrate.register({
@@ -126,6 +112,10 @@
       function render() {
         const { W, H, cols, cw, ch } = layout();
 
+        // Global generative palette — fetched ONCE per frame, cached, then
+        // sampled per oscillator via phaseColor(theta, lut).
+        const lut = Substrate.rampLUT();
+
         ctx.globalCompositeOperation = 'source-over';
         ctx.globalAlpha = 1;
         ctx.fillStyle = '#0a0e0b';
@@ -136,7 +126,7 @@
         const w = Math.ceil(cw) + 1, h = Math.ceil(ch) + 1;
         for (let i = 0; i < N; i++) {
           const col = i % cols, row = (i / cols) | 0;
-          ctx.fillStyle = phaseColor(theta[i]);
+          ctx.fillStyle = phaseColor(theta[i], lut);
           ctx.fillRect(col * cw, row * ch, w, h);
         }
 
@@ -169,7 +159,7 @@
           const th = theta[i];
           const px = cx + R * Math.cos(th);
           const py = cy - R * Math.sin(th);
-          ctx.fillStyle = phaseColor(th);
+          ctx.fillStyle = phaseColor(th, lut);
           ctx.fillRect(px - dot, py - dot, dot * 2, dot * 2);
         }
         ctx.globalCompositeOperation = 'source-over';

@@ -61,28 +61,10 @@
   })();
   const KOFFS = KERNEL.length / 3;
 
-  // --- thermal -> verdant palette LUT (dense cores amber/hot, edges verdant) ---
-  const STOPS = [
-    [0.00, [10, 14, 11]],     // near-black background   #0a0e0b
-    [0.08, [27, 77, 62]],     // deep verdant            #1b4d3e
-    [0.20, [42, 157, 143]],   // verdigris               #2a9d8f
-    [0.40, [0, 255, 156]],    // phosphor                #00ff9c
-    [0.60, [212, 160, 23]],   // warm gold               #d4a017
-    [0.85, [255, 123, 0]],    // amber                   #ff7b00
-    [1.00, [255, 77, 0]]      // hottest core            #ff4d00
-  ];
-  const LUT = new Uint8ClampedArray(256 * 3);
-  for (let i = 0; i < 256; i++) {
-    const t = i / 255;
-    let a = STOPS[0], b = STOPS[STOPS.length - 1];
-    for (let s = 1; s < STOPS.length; s++) {
-      if (t <= STOPS[s][0]) { a = STOPS[s - 1]; b = STOPS[s]; break; }
-    }
-    const f = (t - a[0]) / (b[0] - a[0] || 1);
-    LUT[i * 3]     = a[1][0] + (b[1][0] - a[1][0]) * f;
-    LUT[i * 3 + 1] = a[1][1] + (b[1][1] - a[1][1]) * f;
-    LUT[i * 3 + 2] = a[1][2] + (b[1][2] - a[1][2]) * f;
-  }
+  // Colors now come from the studio's GLOBAL generative palette via
+  // Substrate.rampLUT() (sampled per-frame in render()). The default palette
+  // is thermal->verdant, so the base look is ~unchanged; shuffle/drift of the
+  // global palette recolors this cartridge live. No local ramp is defined.
 
   Substrate.register({
     id: 'lenia',
@@ -193,6 +175,9 @@
       // Colorize the grid, blit scaled-up with smoothing + a green bloom pass.
       function render() {
         const data = img.data;
+        // Global generative palette: fetch the 256-entry RGB LUT once per
+        // frame, then index it by the same t = cell-value mapping as before.
+        const LUT = Substrate.rampLUT();
         let m = 0;
         for (let i = 0, p = 0; i < A.length; i++, p += 4) {
           const a = A[i];

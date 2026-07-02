@@ -23,27 +23,10 @@
 
   const CAP = 5000;              // max boids ever allocated (= count knob max)
 
-  // --- thermal -> verdant palette LUT ------------------------------------
-  // Low t (slow / sparse) = verdant; high t (fast / dense) = amber -> hot.
-  const STOPS = [
-    [0.00, [42, 157, 143]],   // verdigris   #2a9d8f  (slow / lonely)
-    [0.30, [0, 255, 156]],    // phosphor    #00ff9c
-    [0.60, [212, 160, 23]],   // warm gold   #d4a017
-    [0.82, [255, 123, 0]],    // amber       #ff7b00
-    [1.00, [255, 77, 0]],     // hot core    #ff4d00  (fast / packed)
-  ];
-  const LUT = new Uint8ClampedArray(256 * 3);
-  for (let i = 0; i < 256; i++) {
-    const t = i / 255;
-    let a = STOPS[0], b = STOPS[STOPS.length - 1];
-    for (let s = 1; s < STOPS.length; s++) {
-      if (t <= STOPS[s][0]) { a = STOPS[s - 1]; b = STOPS[s]; break; }
-    }
-    const f = (t - a[0]) / (b[0] - a[0] || 1);
-    LUT[i * 3]     = a[1][0] + (b[1][0] - a[1][0]) * f;
-    LUT[i * 3 + 1] = a[1][1] + (b[1][1] - a[1][1]) * f;
-    LUT[i * 3 + 2] = a[1][2] + (b[1][2] - a[1][2]) * f;
-  }
+  // Colors come from the studio GLOBAL generative palette
+  // (window.Substrate.rampLUT), cached once per frame in render(). The default
+  // palette is thermal -> verdant, so the base look is ~unchanged; a palette
+  // shuffle/drift recolors the flock live. No local ramp is defined here.
 
   Substrate.register({
     id: 'murmuration',
@@ -268,6 +251,10 @@
         const maxSpeed = params.maxSpeed * scale;
         const streak = 4 * scale;
 
+        // Global generative palette LUT — one call per frame, then index it
+        // per boid. i3 = (clamp01(t)*255|0)*3 -> [lut[i3], lut[i3+1], lut[i3+2]].
+        const lut = Substrate.rampLUT();
+
         for (let i = 0; i < N; i++) {
           const vX = vx[i], vY = vy[i];
           const sp = Math.sqrt(vX * vX + vY * vY);
@@ -281,7 +268,7 @@
 
           const x = px[i], y = py[i];
           const inv = sp > 1e-6 ? streak / sp : 0;
-          ctx.strokeStyle = 'rgb(' + LUT[c] + ',' + LUT[c + 1] + ',' + LUT[c + 2] + ')';
+          ctx.strokeStyle = 'rgb(' + lut[c] + ',' + lut[c + 1] + ',' + lut[c + 2] + ')';
           ctx.beginPath();
           ctx.moveTo(x - vX * inv, y - vY * inv);         // tail (back along vel)
           ctx.lineTo(x, y);                               // head

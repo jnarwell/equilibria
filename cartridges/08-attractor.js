@@ -28,28 +28,11 @@
   const ADD        = 0.085;  // per-hit energy deposited into the buffer
   const ADDN       = ADD / 255;
 
-  // --- thermal -> verdant palette LUT (edges verdant, fast strokes hot) ---
-  const STOPS = [
-    [0.00, [27, 77, 62]],     // deep verdant   #1b4d3e
-    [0.20, [42, 157, 143]],   // verdigris      #2a9d8f
-    [0.42, [0, 255, 156]],    // phosphor       #00ff9c
-    [0.62, [212, 160, 23]],   // warm gold      #d4a017
-    [0.82, [255, 123, 0]],    // amber          #ff7b00
-    [1.00, [255, 77, 0]]      // hottest core   #ff4d00
-  ];
-  const LUT = new Float32Array(256 * 3);
-  for (let i = 0; i < 256; i++) {
-    const t = i / 255;
-    let a = STOPS[0], b = STOPS[STOPS.length - 1];
-    for (let s = 1; s < STOPS.length; s++) {
-      if (t <= STOPS[s][0]) { a = STOPS[s - 1]; b = STOPS[s]; break; }
-    }
-    const f = (t - a[0]) / (b[0] - a[0] || 1);
-    LUT[i * 3]     = a[1][0] + (b[1][0] - a[1][0]) * f;
-    LUT[i * 3 + 1] = a[1][1] + (b[1][1] - a[1][1]) * f;
-    LUT[i * 3 + 2] = a[1][2] + (b[1][2] - a[1][2]) * f;
-  }
-
+  // Color source: the studio-wide GLOBAL generative palette. The shell's
+  // Substrate.rampLUT() returns a 256-entry RGB LUT (Uint8ClampedArray(768))
+  // for t in [0,1]; the default palette is thermal->verdant so the base look
+  // matches the former local ramp, while shuffle/drift recolors live. We cache
+  // it once per frame (see step()) and index it by the same displacement t.
   const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
   Substrate.register({
@@ -81,6 +64,10 @@
       let img = null;          // ImageData for the buffer
       let x = 0, y = 0;        // current orbit point
       let coverage = 0;        // fraction of buffer lit (spread)
+
+      // Global-palette LUT (Uint8ClampedArray(768)) cached once per frame in
+      // step() and read inside iterate() for the point color source.
+      let frameLUT = null;
 
       // Per-parameter drift oscillators — seeded so reseed reproduces morph.
       const phase = new Float64Array(4);
@@ -142,9 +129,9 @@
           if (ti > 255) ti = 255;
           const li = ti * 3;
           const bi = (by * BW + bx) * 3;
-          acc[bi]     += LUT[li]     * ADDN;
-          acc[bi + 1] += LUT[li + 1] * ADDN;
-          acc[bi + 2] += LUT[li + 2] * ADDN;
+          acc[bi]     += frameLUT[li]     * ADDN;
+          acc[bi + 1] += frameLUT[li + 1] * ADDN;
+          acc[bi + 2] += frameLUT[li + 2] * ADDN;
         }
         x = px; y = py;
         // If the orbit escaped to a non-finite value, re-seed the point.
@@ -229,6 +216,10 @@
           // Slow per-frame fade so the cloud accumulates and breathes.
           const keep = 1 - fade;
           for (let i = 0; i < acc.length; i++) acc[i] *= keep;
+
+          // Cache the global generative palette LUT once per frame; iterate()
+          // indexes it by displacement t for the point color source.
+          frameLUT = Substrate.rampLUT();
 
           iterate(effA, effB, effC, effD, iterations);
           tonemap();

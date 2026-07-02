@@ -29,29 +29,10 @@
   const SETTLE_EPS = 0.08; // |w| below this = "sitting on a node"
   const TRAIL_FADE = 0.18; // per-frame background wash (lower = longer trails)
 
-  // --- thermal -> verdant palette LUT (nodes hot/gold, antinodes verdant) ---
-  const STOPS = [
-    [0.00, [10, 14, 11]],     // near-black background   #0a0e0b
-    [0.10, [27, 77, 62]],     // deep verdant            #1b4d3e
-    [0.28, [42, 157, 143]],   // verdigris               #2a9d8f
-    [0.48, [0, 255, 156]],    // phosphor                #00ff9c
-    [0.68, [212, 160, 23]],   // warm gold               #d4a017
-    [0.86, [255, 123, 0]],    // amber                   #ff7b00
-    [1.00, [255, 77, 0]]      // hottest core            #ff4d00
-  ];
-  const LUT_STR = new Array(256);
-  for (let i = 0; i < 256; i++) {
-    const t = i / 255;
-    let a = STOPS[0], b = STOPS[STOPS.length - 1];
-    for (let s = 1; s < STOPS.length; s++) {
-      if (t <= STOPS[s][0]) { a = STOPS[s - 1]; b = STOPS[s]; break; }
-    }
-    const f = (t - a[0]) / (b[0] - a[0] || 1);
-    const r = (a[1][0] + (b[1][0] - a[1][0]) * f) | 0;
-    const g = (a[1][1] + (b[1][1] - a[1][1]) * f) | 0;
-    const bl = (a[1][2] + (b[1][2] - a[1][2]) * f) | 0;
-    LUT_STR[i] = 'rgb(' + r + ',' + g + ',' + bl + ')';
-  }
+  // Colors come from the studio's GLOBAL generative palette
+  // (window.Substrate.rampLUT), cached once per frame below. The default
+  // palette is thermal -> verdant so the base look is ~unchanged; shuffling or
+  // drifting the global palette recolors the sand live.
 
   Substrate.register({
     id: 'chladni',
@@ -145,6 +126,10 @@
         const core = 1.6 * DPR, glow = 4.2 * DPR;
         let settled = 0;
 
+        // Cache the global palette LUT once per frame: Uint8ClampedArray(768),
+        // 256 RGB entries. Color each particle by the same |w|-derived t.
+        const lut = Substrate.rampLUT();
+
         for (let i = 0; i < count; i++) {
           let x = PX[i], y = PY[i];
 
@@ -180,9 +165,10 @@
           const awN = aw > W_MAX ? 1 : aw / W_MAX;
           const u = 1 - awN;
           const ci = (u * 255) | 0;
+          const li = ci * 3;
           const px = x * cw, py = y * ch;
 
-          ctx.fillStyle = LUT_STR[ci];
+          ctx.fillStyle = 'rgb(' + lut[li] + ',' + lut[li + 1] + ',' + lut[li + 2] + ')';
           ctx.globalAlpha = 0.10 + 0.16 * u;
           ctx.fillRect(px - glow * 0.5, py - glow * 0.5, glow, glow);
           ctx.globalAlpha = 0.35 + 0.5 * u;

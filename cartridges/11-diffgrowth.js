@@ -20,27 +20,12 @@
 (function () {
   'use strict';
 
-  // --- thermal -> verdant palette LUT (straight edges verdant, folds hot) ---
-  const STOPS = [
-    [0.00, [27, 77, 62]],     // deep verdant           #1b4d3e
-    [0.20, [42, 157, 143]],   // verdigris              #2a9d8f
-    [0.42, [0, 255, 156]],    // phosphor               #00ff9c
-    [0.62, [212, 160, 23]],   // warm gold              #d4a017
-    [0.82, [255, 123, 0]],    // amber                  #ff7b00
-    [1.00, [255, 77, 0]]      // hottest fold           #ff4d00
-  ];
-  const LUT = new Uint8ClampedArray(256 * 3);
-  for (let i = 0; i < 256; i++) {
-    const t = i / 255;
-    let a = STOPS[0], b = STOPS[STOPS.length - 1];
-    for (let s = 1; s < STOPS.length; s++) {
-      if (t <= STOPS[s][0]) { a = STOPS[s - 1]; b = STOPS[s]; break; }
-    }
-    const f = (t - a[0]) / (b[0] - a[0] || 1);
-    LUT[i * 3]     = a[1][0] + (b[1][0] - a[1][0]) * f;
-    LUT[i * 3 + 1] = a[1][1] + (b[1][1] - a[1][1]) * f;
-    LUT[i * 3 + 2] = a[1][2] + (b[1][2] - a[1][2]) * f;
-  }
+  // Boundary stroke color now comes from the studio's GLOBAL generative
+  // palette (window.Substrate.rampLUT), sampled fresh each frame so that a
+  // palette shuffle/drift live-recolors the growth. The curvature->t mapping
+  // and the 32-bucket batching below are unchanged; only the color SOURCE
+  // moved. The default global palette is thermal->verdant, so the base look
+  // is ~unchanged (straight edges verdant, tight folds hot).
   const BUCKETS = 32;                 // color batches for the stroke pass
   const CAP = 4200;                   // hard node-array capacity (> max knob)
 
@@ -321,11 +306,14 @@
         }
         ctx.globalAlpha = 0.95;
         ctx.lineWidth = 1.5 * DPR;
+        // Cache the GLOBAL palette LUT once this frame, then sample each
+        // bucket's t at build time (t = b/(BUCKETS-1), same mapping as before).
+        const lut = Substrate.rampLUT();
         for (let b = 0; b < BUCKETS; b++) {
           const n = bucketLen[b];
           if (n === 0) continue;
           const ci = ((b / (BUCKETS - 1)) * 255) | 0;
-          ctx.strokeStyle = 'rgb(' + LUT[ci * 3] + ',' + LUT[ci * 3 + 1] + ',' + LUT[ci * 3 + 2] + ')';
+          ctx.strokeStyle = 'rgb(' + lut[ci * 3] + ',' + lut[ci * 3 + 1] + ',' + lut[ci * 3 + 2] + ')';
           const buf = bucketBuf[b];
           ctx.beginPath();
           for (let k = 0; k < n; k += 4) {

@@ -33,28 +33,10 @@
   const BUOY_K  = 7;    // buoyancy (dye rises)
   const DENS_SCALE = 0.6, SPEED_SCALE = 0.03;
 
-  // --- thermal -> verdant palette LUT (calm verdant → dense/hot amber) ---
-  const STOPS = [
-    [0.00, [10, 14, 11]],     // near-black background   #0a0e0b
-    [0.10, [27, 77, 62]],     // deep verdant            #1b4d3e
-    [0.28, [42, 157, 143]],   // verdigris               #2a9d8f
-    [0.48, [0, 255, 156]],    // phosphor                #00ff9c
-    [0.66, [212, 160, 23]],   // warm gold               #d4a017
-    [0.85, [255, 123, 0]],    // amber                   #ff7b00
-    [1.00, [255, 77, 0]]      // hottest core            #ff4d00
-  ];
-  const LUT = new Uint8ClampedArray(256 * 3);
-  for (let i = 0; i < 256; i++) {
-    const t = i / 255;
-    let a = STOPS[0], b = STOPS[STOPS.length - 1];
-    for (let s = 1; s < STOPS.length; s++) {
-      if (t <= STOPS[s][0]) { a = STOPS[s - 1]; b = STOPS[s]; break; }
-    }
-    const f = (t - a[0]) / (b[0] - a[0] || 1);
-    LUT[i * 3]     = a[1][0] + (b[1][0] - a[1][0]) * f;
-    LUT[i * 3 + 1] = a[1][1] + (b[1][1] - a[1][1]) * f;
-    LUT[i * 3 + 2] = a[1][2] + (b[1][2] - a[1][2]) * f;
-  }
+  // Color source is the studio's GLOBAL generative palette (window.Substrate.
+  // rampLUT()). Default palette = thermal→verdant so the base look matches the
+  // former local ramp (calm verdant → dense/hot amber); shuffle/drift recolors
+  // the field live. The LUT is fetched once per frame and cached in render().
 
   Substrate.register({
     id: 'fluid',
@@ -272,6 +254,7 @@
       // -------------------------------------------------- render
       function render() {
         const data = img.data;
+        const lut = Substrate.rampLUT();   // global palette LUT, fetched once/frame
         let sSum = 0, keSum = 0;
         for (let i = 0, p = 0; i < size; i++, p += 4) {
           const uu = u[i], vv = v[i];
@@ -282,9 +265,9 @@
           let t = densT * 0.78 + spN * 0.42 * densT; // speed only heats where dye is
           if (t > 1) t = 1; else if (t < 0) t = 0;
           const c = ((t * 255) | 0) * 3;
-          data[p]     = LUT[c];
-          data[p + 1] = LUT[c + 1];
-          data[p + 2] = LUT[c + 2];
+          data[p]     = lut[c];
+          data[p + 1] = lut[c + 1];
+          data[p + 2] = lut[c + 2];
           data[p + 3] = 255;
         }
         meanSpeed = sSum / size;

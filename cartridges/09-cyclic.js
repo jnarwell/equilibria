@@ -20,26 +20,11 @@
   const LONG = 360;   // sim cells on the longer canvas axis
   const SHORT_MIN = 160;
 
-  // --- thermal -> verdant ramp (6 named stops, evenly spaced) ---
-  const RAMP = [
-    [27, 77, 62],    // #1b4d3e deep verdant
-    [42, 157, 143],  // #2a9d8f verdigris
-    [0, 255, 156],   // #00ff9c phosphor
-    [212, 160, 23],  // #d4a017 warm gold
-    [255, 123, 0],   // #ff7b00 amber
-    [255, 77, 0],    // #ff4d00 hottest core
-  ];
-  function rampRGB(t) {
-    t = t < 0 ? 0 : t > 1 ? 1 : t;
-    const u = t * (RAMP.length - 1);
-    const i = u | 0, f = u - i;
-    const a = RAMP[i], b = RAMP[Math.min(i + 1, RAMP.length - 1)];
-    return [
-      (a[0] + (b[0] - a[0]) * f) | 0,
-      (a[1] + (b[1] - a[1]) * f) | 0,
-      (a[2] + (b[2] - a[2]) * f) | 0,
-    ];
-  }
+  // Colours now come from the studio-wide GLOBAL generative palette
+  // (window.Substrate.rampLUT) instead of a local hardcoded ramp. The
+  // default global palette is thermal->verdant so the base look is
+  // unchanged, while shuffle/drift of the global palette recolours the
+  // spirals live. The state->t mapping (t = state/(N-1)) is unchanged.
 
   Substrate.register({
     id: 'cyclic',
@@ -96,14 +81,20 @@
         offs = new Int32Array(list);
       }
 
-      // Precompute the per-state palette for N states through the ramp.
+      // Rebuild the per-state palette for N states from the GLOBAL palette.
+      // rampLUT() is fetched exactly ONCE here (not per cell); called once per
+      // frame from step() so live shuffle/drift of the global palette shows.
+      // Same state->t mapping as before: t = i/(n-1), i in 0..N-1.
       function buildPalette(n) {
+        const lut = Substrate.rampLUT();
         palette = new Uint8Array(n * 3);
         for (let i = 0; i < n; i++) {
-          const c = rampRGB(n > 1 ? i / (n - 1) : 0);
-          palette[i * 3] = c[0];
-          palette[i * 3 + 1] = c[1];
-          palette[i * 3 + 2] = c[2];
+          let t = n > 1 ? i / (n - 1) : 0;
+          if (t < 0) t = 0; else if (t > 1) t = 1;
+          const li = (t * 255) | 0;
+          palette[i * 3] = lut[li * 3];
+          palette[i * 3 + 1] = lut[li * 3 + 1];
+          palette[i * 3 + 2] = lut[li * 3 + 2];
         }
       }
 
@@ -226,6 +217,11 @@
 
           update(n, thr);
           smoothAct += (changedFrac - smoothAct) * 0.1;
+
+          // Refresh palette from the GLOBAL LUT once per frame (never per
+          // cell) so live shuffle/drift of the studio palette recolours
+          // the spirals. Cheap: N entries, one rampLUT() fetch per frame.
+          buildPalette(n);
 
           // Near-static? count it. When the field freezes or goes homogeneous,
           // inject a revival patch so the spirals never fully die.

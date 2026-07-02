@@ -131,33 +131,31 @@
         t = V; V = V2; V2 = t;
       }
 
-      // ---- Palette (mirrors the GLSL thermalVerdant in the source) ----
-      const BG_C       = [0.039, 0.055, 0.043]; // #0a0e0b
-      const C_DEEP_C   = [0.106, 0.302, 0.243]; // #1b4d3e
-      const C_VERD_C   = [0.165, 0.616, 0.561]; // #2a9d8f
-      const C_PHOS_C   = [0.000, 1.000, 0.612]; // #00ff9c
-      const C_GOLD_C   = [0.831, 0.627, 0.090]; // #d4a017
-      const C_HOT_C    = [1.000, 0.482, 0.000]; // #ff7b00
-      const C_HOTTER_C = [1.000, 0.302, 0.000]; // #ff4d00
+      // ---- Palette: colors now come from the studio GLOBAL palette ----
+      // Formerly a local thermal->verdant ramp (thermalVerdant + its
+      // 7 hardcoded stops). The ramp SHAPE lives elsewhere now — the
+      // default global palette is thermal->verdant so the base look is
+      // ~unchanged, and shuffle/drift on the palette recolors live.
+      //
+      // Substrate.rampLUT() -> Uint8ClampedArray(768): 256-entry RGB LUT
+      // for t in [0,1], sampled ONCE per frame (cached in paint()).
+      // The rest of the paint math works in 0-1 floats, so we normalize
+      // each sampled channel to [0,1] to preserve every downstream effect
+      // (presence fade, bloom add, tone curve, gamma) byte-for-byte.
+      const BG_C = [0.039, 0.055, 0.043]; // #0a0e0b — void/background fade target
 
       function smoothstep(e0, e1, x) {
         let t = (x - e0) / (e1 - e0);
         t = t < 0 ? 0 : t > 1 ? 1 : t;
         return t * t * (3 - 2 * t);
       }
-      function mix3(p, q, m, out) {
-        out[0] = p[0] + (q[0] - p[0]) * m;
-        out[1] = p[1] + (q[1] - p[1]) * m;
-        out[2] = p[2] + (q[2] - p[2]) * m;
-        return out;
-      }
-      function thermalVerdant(t, out) {
+      // Sample the cached global LUT at t, writing 0-1 floats into `out`.
+      function sampleRamp(lut, t, out) {
         t = t < 0 ? 0 : t > 1 ? 1 : t;
-        if (t < 0.18)      mix3(C_DEEP_C, C_VERD_C, smoothstep(0.0,  0.18, t), out);
-        else if (t < 0.34) mix3(C_VERD_C, C_PHOS_C, smoothstep(0.18, 0.34, t), out);
-        else if (t < 0.55) mix3(C_PHOS_C, C_GOLD_C, smoothstep(0.34, 0.55, t), out);
-        else if (t < 0.78) mix3(C_GOLD_C, C_HOT_C,  smoothstep(0.55, 0.78, t), out);
-        else               mix3(C_HOT_C,  C_HOTTER_C, smoothstep(0.78, 1.0, t), out);
+        const o = ((t * 255) | 0) * 3;
+        out[0] = lut[o]     / 255;
+        out[1] = lut[o + 1] / 255;
+        out[2] = lut[o + 2] / 255;
         return out;
       }
 
@@ -172,6 +170,8 @@
       const _col2  = [0, 0, 0];
 
       function paint() {
+        // Global palette LUT: sampled ONCE per frame, never per cell.
+        const lut = Substrate.rampLUT();
         for (let y = 0; y < GRID; y++) {
           const yu = (y - 1 + GRID) % GRID;
           const yd = (y + 1) % GRID;
@@ -192,7 +192,7 @@
             t += (front > 0 ? front : 0) * 0.25;
             t = t < 0 ? 0 : t > 1 ? 1 : t;
 
-            thermalVerdant(t, _col);
+            sampleRamp(lut, t, _col);
 
             // fade very-low-V tissue into the warm-black "void"
             const presence = smoothstep(0.02, 0.12, v);
@@ -202,7 +202,7 @@
 
             // warm-biased bloom add
             const bloom = smoothstep(0.18, 0.45, halo);
-            thermalVerdant(t + 0.15 > 1 ? 1 : t + 0.15, _col2);
+            sampleRamp(lut, t + 0.15 > 1 ? 1 : t + 0.15, _col2);
             _col[0] += _col2[0] * bloom * 0.35;
             _col[1] += _col2[1] * bloom * 0.35;
             _col[2] += _col2[2] * bloom * 0.35;

@@ -23,30 +23,26 @@
 (function () {
   "use strict";
 
-  // ----- Palette / thermal->verdant lerp ----------------------
+  // ----- Palette ----------------------------------------------
+  // Non-ramp fixed colors only. Reservoir / channel / particle / chart
+  // colors now come from the studio's GLOBAL generative palette via
+  // window.Substrate (default palette ~= thermal->verdant, so the base
+  // look is unchanged; shuffle/drift recolors live).
   const COL = {
-    bg:        [10, 14, 11],
-    hottest:   [255, 77, 0],
-    hot:       [255, 123, 0],
-    gold:      [212, 160, 23],
-    verdigris: [42, 157, 143],
-    deep:      [27, 77, 62],
-    phosphor:  [0, 255, 156],
+    bg:   [10, 14, 11],  // background wash
+    deep: [27, 77, 62],  // liquid-gradient darken target (see drawReservoir)
   };
   function lerp(a, b, t) { return a + (b - a) * t; }
   function clamp(x, lo, hi) { return x < lo ? lo : x > hi ? hi : x; }
   function lerp3(c1, c2, t) {
     return [lerp(c1[0], c2[0], t), lerp(c1[1], c2[1], t), lerp(c1[2], c2[2], t)];
   }
-  // t in [0,1]: 0 = cool/verdant (at setpoint), 1 = hot/amber (stressed).
+  // t in [0,1]: color source is now the global palette. The t mappings
+  // (deviation->t, flow->t) are unchanged; only the COLOR source moved.
+  // Returns an [r,g,b] array so existing rgba(col, alpha) wrappers keep
+  // their alpha (glow underlayers, dashes, gradient stops all preserved).
   function thermal(t) {
-    t = clamp(t, 0, 1);
-    let c;
-    if (t < 0.25)      c = lerp3(COL.deep,      COL.verdigris, t / 0.25);
-    else if (t < 0.5)  c = lerp3(COL.verdigris, COL.gold,      (t - 0.25) / 0.25);
-    else if (t < 0.8)  c = lerp3(COL.gold,      COL.hot,       (t - 0.5) / 0.3);
-    else               c = lerp3(COL.hot,       COL.hottest,   (t - 0.8) / 0.2);
-    return c;
+    return window.Substrate.ramp(clamp(t, 0, 1));
   }
   function rgba(c, a) { return `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`; }
 

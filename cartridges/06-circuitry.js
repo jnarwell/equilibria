@@ -28,28 +28,10 @@
   const MAX_STEPS     = 260;  // hard cap on steps per walker per attempt
   const TIP_WINDOW    = 26;   // a cell is a "tip" if frozen within this many frames
 
-  // --- recency palette: 1.0 = just frozen (HOT) -> 0.0 = old (COOL) ---
-  // thermal -> verdant on #0a0e0b, matching the shared body of work.
-  const STOPS = [
-    [0.00, [27, 77, 62]],    // deep verdigris   #1b4d3e  (oldest frozen)
-    [0.16, [42, 157, 143]],  // verdigris        #2a9d8f
-    [0.36, [0, 255, 156]],   // phosphor         #00ff9c
-    [0.60, [212, 160, 23]],  // warm gold        #d4a017
-    [0.82, [255, 123, 0]],   // amber            #ff7b00
-    [1.00, [255, 77, 0]]     // hottest tip      #ff4d00
-  ];
-  const LUT = new Uint8ClampedArray(256 * 3);
-  for (let i = 0; i < 256; i++) {
-    const t = i / 255;
-    let a = STOPS[0], b = STOPS[STOPS.length - 1];
-    for (let s = 1; s < STOPS.length; s++) {
-      if (t <= STOPS[s][0]) { a = STOPS[s - 1]; b = STOPS[s]; break; }
-    }
-    const f = (t - a[0]) / (b[0] - a[0] || 1);
-    LUT[i * 3]     = a[1][0] + (b[1][0] - a[1][0]) * f;
-    LUT[i * 3 + 1] = a[1][1] + (b[1][1] - a[1][1]) * f;
-    LUT[i * 3 + 2] = a[1][2] + (b[1][2] - a[1][2]) * f;
-  }
+  // COLOR SOURCE: the studio-global generative palette (window.Substrate).
+  // The recency t = age-recency value drives the ramp; default palette is
+  // thermal->verdant so the base look is ~unchanged. See render() — the LUT is
+  // fetched once per frame via Substrate.rampLUT() and sampled per cell.
 
   // 8-neighbour offsets, used for both walking and stick-contact tests.
   const NX = [1, 1, 0, -1, -1, -1, 0, 1];
@@ -210,6 +192,12 @@
         const window = 1 / cool;
         const data = img.data;
         const hdata = hotImg.data;
+
+        // COLOR SOURCE: studio-global generative palette. Fetch the 256-entry
+        // RGB LUT once per frame (never per cell) and sample it by the same
+        // recency t computed below. Default palette is thermal->verdant, so the
+        // tips-hot / old-cool base look is preserved; shuffle/drift recolors live.
+        const LUT = Substrate.rampLUT();
 
         tips = 0;
         for (let i = 0, p = 0; i < age.length; i++, p += 4) {

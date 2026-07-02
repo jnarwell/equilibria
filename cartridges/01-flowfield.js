@@ -16,35 +16,21 @@
 (function () {
   "use strict";
 
-  // ---- Palette: thermal -> verdant ramp (matches the source piece) ----
-  // Control points [t, r, g, b], ascending in t. t=1 hottest, t=0 return/life.
-  const STOPS = [
-    [0.00,  27,  77,  62],   // #1b4d3e deep verdant
-    [0.18,  42, 157, 143],   // #2a9d8f verdigris
-    [0.36,   0, 255, 156],   // #00ff9c phosphor green (the "alive" band)
-    [0.58, 120, 175, 110],   // transitional sage
-    [0.70, 212, 160,  23],   // #d4a017 warm gold
-    [0.88, 255, 123,   0],   // #ff7b00 amber
-    [1.00, 255,  77,   0],   // #ff4d00 hottest
-  ];
-
-  // Linear interpolate the thermal gradient. Returns {r,g,b} ints.
-  function thermal(t) {
-    if (t <= 0) return { r: STOPS[0][1], g: STOPS[0][2], b: STOPS[0][3] };
-    const last = STOPS[STOPS.length - 1];
-    if (t >= 1) return { r: last[1], g: last[2], b: last[3] };
-    for (let i = 0; i < STOPS.length - 1; i++) {
-      const a = STOPS[i], b = STOPS[i + 1];
-      if (t >= a[0] && t <= b[0]) {
-        const f = (t - a[0]) / (b[0] - a[0]);
-        return {
-          r: Math.round(a[1] + (b[1] - a[1]) * f),
-          g: Math.round(a[2] + (b[2] - a[2]) * f),
-          b: Math.round(a[3] + (b[3] - a[3]) * f),
-        };
-      }
-    }
-    return { r: last[1], g: last[2], b: last[3] };
+  // ---- Palette: sourced from the studio's GLOBAL generative palette ----
+  // Colors now come from Substrate's global ramp API. The default global
+  // palette reproduces the original thermal -> verdant look, and switching
+  // the palette (shuffle/drift) recolors this system live. The mapping from
+  // the system's internal quantity (temperature t in [0,1]) to a color is
+  // unchanged — only the color SOURCE moved from a local ramp to the global
+  // palette.
+  //
+  // Sample a cached 768-byte RGB LUT (Uint8ClampedArray from rampLUT()) at a
+  // normalized scalar t in [0,1]. Returns {r,g,b} ints. Callers cache the LUT
+  // once per frame and call this in the hot loop (never re-fetch per pixel).
+  function sampleLUT(lut, t) {
+    const i = (Math.max(0, Math.min(1, t)) * 255) | 0;
+    const j = i * 3;
+    return { r: lut[j], g: lut[j + 1], b: lut[j + 2] };
   }
 
   const BG = "#0a0e0b"; // near-black, slightly warm-green ground
@@ -193,6 +179,11 @@
           // (standalone) driveFactor is exactly 1 and every branch below is inert.
           const driveFactor = extDrive === null ? 1 : (0.6 + extDrive * 0.8);
 
+          // Cache the global palette LUT ONCE per frame; sampled in the hot
+          // particle loop below via sampleLUT(). Switching the global palette
+          // recolors every particle on the next frame.
+          const lut = Substrate.rampLUT();
+
           // Global gentle fade keeps the canvas in equilibrium (trails decay).
           ctx.globalCompositeOperation = "source-over";
           ctx.fillStyle = "rgba(10, 14, 11, " + fade + ")";
@@ -220,7 +211,7 @@
               p.y += (dy / d) * rs;
 
               // Faint cool return trace.
-              const col = thermal(0.10);
+              const col = sampleLUT(lut, 0.10);
               ctx.strokeStyle = "rgba(" + col.r + "," + col.g + "," + col.b + "," + CONST.recaptureGlow + ")";
               ctx.lineWidth = 0.5 * DPR;
               ctx.beginPath();
@@ -259,7 +250,7 @@
             p.life += f;
 
             // Stroke colored by current temperature; hotter = brighter/thicker.
-            const col = thermal(p.t);
+            const col = sampleLUT(lut, p.t);
             const a = sA * (0.45 + p.t * 0.55);
             ctx.strokeStyle = "rgba(" + col.r + "," + col.g + "," + col.b + "," + a + ")";
             ctx.lineWidth = p.w * (0.6 + p.t * 0.9) * DPR;

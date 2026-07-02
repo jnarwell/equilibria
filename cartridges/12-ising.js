@@ -24,29 +24,9 @@
   const TARGET_LONG = 360;      // sim cells on the LONGER canvas axis
   const TC_OVER_J = 2 / Math.log(1 + Math.SQRT2); // ≈ 2.2691853 (Onsager)
 
-  // --- thermal -> verdant palette LUT ---------------------------------------
-  // Spin −1 domain reads deep verdant; spin +1 domain reads hot amber; mixed
-  // boundary cells land mid-ramp (phosphor/gold) so domain walls glow.
-  const STOPS = [
-    [0.00, [27, 77, 62]],     // deep verdant    #1b4d3e   (spin −1 domain)
-    [0.20, [42, 157, 143]],   // verdigris       #2a9d8f
-    [0.40, [0, 255, 156]],    // phosphor        #00ff9c
-    [0.60, [212, 160, 23]],   // warm gold       #d4a017
-    [0.80, [255, 123, 0]],    // amber           #ff7b00
-    [1.00, [255, 77, 0]]      // hottest         #ff4d00   (spin +1 domain)
-  ];
-  const LUT = new Uint8ClampedArray(256 * 3);
-  for (let i = 0; i < 256; i++) {
-    const t = i / 255;
-    let a = STOPS[0], b = STOPS[STOPS.length - 1];
-    for (let s = 1; s < STOPS.length; s++) {
-      if (t <= STOPS[s][0]) { a = STOPS[s - 1]; b = STOPS[s]; break; }
-    }
-    const f = (t - a[0]) / (b[0] - a[0] || 1);
-    LUT[i * 3]     = a[1][0] + (b[1][0] - a[1][0]) * f;
-    LUT[i * 3 + 1] = a[1][1] + (b[1][1] - a[1][1]) * f;
-    LUT[i * 3 + 2] = a[1][2] + (b[1][2] - a[1][2]) * f;
-  }
+  // Colours now come from the studio GLOBAL generative palette
+  // (Substrate.rampLUT), sampled per-frame in render(). Default palette is
+  // thermal→verdant, so the base look matches the former local ramp.
 
   Substrate.register({
     id: 'ising',
@@ -145,6 +125,11 @@
       // colour and domain walls (mixed neighbourhoods) glow mid-ramp.
       function render() {
         const data = img.data;
+        // COLOR SOURCE: studio GLOBAL generative palette. Sample the 256-entry
+        // RGB LUT once per frame (never per cell); index by the same smoothed-
+        // spin t the loop already computes. Default palette is thermal→verdant
+        // so the base look is ~unchanged; shuffle/drift recolors live.
+        const LUT = Substrate.rampLUT();
         for (let y = 0; y < H; y++) {
           const yu = y === 0 ? H - 1 : y - 1;
           const yd = y === H - 1 ? 0 : y + 1;

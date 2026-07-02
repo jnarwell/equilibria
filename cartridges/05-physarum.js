@@ -22,29 +22,11 @@
   const SPEED = 1.0;        // agent step length, in grid cells / step
   const TONE_K = 0.30;      // density -> brightness curve steepness
 
-  // --- thermal -> verdant palette LUT (faint verdant -> gold -> amber cores) ---
-  // Continuity with the rest of the rack: same ramp family on #0a0e0b.
-  const STOPS = [
-    [0.00, [10, 14, 11]],    // near-black background   #0a0e0b
-    [0.12, [27, 77, 62]],    // deep verdant            #1b4d3e
-    [0.30, [42, 157, 143]],  // verdigris               #2a9d8f
-    [0.52, [0, 255, 156]],   // phosphor                #00ff9c
-    [0.74, [212, 160, 23]],  // warm gold               #d4a017
-    [0.90, [255, 123, 0]],   // amber                   #ff7b00
-    [1.00, [255, 77, 0]]     // hottest vein            #ff4d00
-  ];
-  const LUT = new Uint8ClampedArray(256 * 3);
-  for (let i = 0; i < 256; i++) {
-    const t = i / 255;
-    let a = STOPS[0], b = STOPS[STOPS.length - 1];
-    for (let s = 1; s < STOPS.length; s++) {
-      if (t <= STOPS[s][0]) { a = STOPS[s - 1]; b = STOPS[s]; break; }
-    }
-    const f = (t - a[0]) / (b[0] - a[0] || 1);
-    LUT[i * 3]     = a[1][0] + (b[1][0] - a[1][0]) * f;
-    LUT[i * 3 + 1] = a[1][1] + (b[1][1] - a[1][1]) * f;
-    LUT[i * 3 + 2] = a[1][2] + (b[1][2] - a[1][2]) * f;
-  }
+  // Colors come from the studio's GLOBAL generative palette
+  // (window.Substrate.rampLUT()) — the default palette is thermal->verdant so
+  // the base look is ~unchanged, while shuffle/drift recolors live. The LUT is
+  // sampled once per frame (see render()) and indexed by the same tone-curve t
+  // the trail density derives.
 
   const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
@@ -199,13 +181,16 @@
       // smoothing plus an additive bloom pass for the phosphor glow.
       function render() {
         const data = img.data;
+        // Global generative palette: fetch the 256-entry RGB LUT ONCE per frame,
+        // then sample per cell — never call rampLUT() inside the pixel loop.
+        const lut = Substrate.rampLUT();
         for (let i = 0, p = 0; i < trail.length; i++, p += 4) {
           // v in [0,1): dense veins saturate toward gold/amber, sparse -> verdant.
           const v = 1 - Math.exp(-trail[i] * TONE_K);
           const c = ((v * 255) | 0) * 3;
-          data[p]     = LUT[c];
-          data[p + 1] = LUT[c + 1];
-          data[p + 2] = LUT[c + 2];
+          data[p]     = lut[c];
+          data[p + 1] = lut[c + 1];
+          data[p + 2] = lut[c + 2];
           data[p + 3] = 255;
         }
         gctx.putImageData(img, 0, 0);
