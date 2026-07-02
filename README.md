@@ -5,9 +5,9 @@ automata, synchronization, statistical mechanics, growth, fluids, flocking — t
 operate, breed, couple, and record. No dependencies, no build, no server. It's one HTML file
 and a folder of small scripts.
 
-> ▶ **Play it live:** _(GitHub Pages link goes here once published)_
+> ▶ **Play it live: https://jnarwell.github.io/equilibria/**
 >
-> Or clone and open `studio.html` (or `index.html`) directly in a browser.
+> Or clone and open `index.html` directly in a browser.
 
 Aesthetic: *cyberdeck × solarpunk × thermodynamic equilibrium.* One thermal→verdant palette runs
 through every system as a metabolism — heat dissipated, captured, returned.
@@ -16,7 +16,7 @@ through every system as a metabolism — heat dissipated, captured, returned.
 
 ## What's inside
 
-Open **`studio.html`** — the playground. On the left, a rack of **cartridges** (systems). In the
+Open **`index.html`** — the playground. On the left, a rack of **cartridges** (systems). In the
 center, the running canvas. On the right, knobs auto-generated from each system, plus reseed,
 PNG export, and video capture. Below, a **library** where you save runs and **breed** two of them
 into offspring. Up top, a **COUPLE** mode that runs four systems at once and wires each one's
@@ -71,9 +71,9 @@ Then add one `<script src="cartridges/NN-my-system.js"></script>` line to `studi
 No install. Clone and open the file:
 
 ```bash
-git clone https://github.com/USER/equilibria.git
+git clone https://github.com/jnarwell/equilibria.git
 cd equilibria
-open studio.html      # macOS  (or just double-click it)
+open index.html       # macOS  (or just double-click it)
 ```
 
 The standalone `01`–`04` HTML files are the original single-piece versions, kept alongside the studio.
