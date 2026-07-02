@@ -189,6 +189,14 @@
     <div class="btnrow solo-only"><button class="btn warm" id="btn-save">★ Save to library</button></div>
     <div class="btnrow"><button class="btn solo-only" id="btn-link">⧉ Copy link</button><button class="btn" id="btn-png">▣ PNG</button></div>
     <button class="btn" id="btn-rec">● Record video</button>
+
+    <div class="lbl">Palette · global</div>
+    <div class="btnrow">
+      <button class="btn" id="btn-pal-shuffle">◈ Shuffle</button>
+      <button class="btn" id="btn-pal-reset">↺ Thermal</button>
+    </div>
+    <div class="knob"><div class="kh"><span>Color drift</span><span class="kv" id="pal-drift-val">0.00</span></div>
+      <input type="range" id="pal-drift" min="0" max="0.3" step="0.005" value="0"></div>
   </div>
 
   <!-- LIBRARY -->
@@ -324,9 +332,7 @@
       const ctx = canvas.getContext('2d');
       let noise = Substrate.noise2D(seed); let sparks = [], sd = seed, t = 0;
       const ramp = [[27,77,62],[42,157,143],[0,255,156],[212,160,23],[255,123,0],[255,77,0]];
-      function col(u){ u=Math.max(0,Math.min(1,u))*(ramp.length-1); const i=u|0, f=u-i;
-        const a=ramp[i], b=ramp[Math.min(i+1,ramp.length-1)];
-        return `rgb(${a[0]+(b[0]-a[0])*f|0},${a[1]+(b[1]-a[1])*f|0},${a[2]+(b[2]-a[2])*f|0})`; }
+      function col(u){ return Substrate.rampCSS(u); }  // sources the global generative palette
       function buildSparks(){ const r=Substrate.rng(sd); sparks=[];
         for(let i=0;i<params.grain;i++) sparks.push({x:r(),y:r(),p:r()}); }
       buildSparks(); let lastGrain = params.grain;
@@ -428,6 +434,7 @@
     hudT.textContent=def.name; hudB.textContent=def.blurb||'';
     last=performance.now(); readClock=0;
     const loop=now=>{ const dt=Math.min(now-last,60); last=now;
+      window.Substrate.stepColor(dt);
       try{ instance.step(dt); }catch(e){ hudB.textContent='step error: '+e.message; console.error(e); return; }
       readClock+=dt;
       if(readClock>300 && instance.readouts){ readClock=0; const r=instance.readouts();
@@ -467,7 +474,7 @@
     couple={cells, matrix:new Set(), strength:+$('#str').value};
     buildMatrix(); wireLoopPreset();   // start pre-wired so it breathes immediately
     last=performance.now();
-    const loop=now=>{ const dt=Math.min(now-last,60); last=now; coupleStep(dt); raf=requestAnimationFrame(loop); };
+    const loop=now=>{ const dt=Math.min(now-last,60); last=now; window.Substrate.stepColor(dt); coupleStep(dt); raf=requestAnimationFrame(loop); };
     raf=requestAnimationFrame(loop);
   }
   function coupleStep(dt){
@@ -615,6 +622,11 @@
     else if(active){ url=active.canvas.toDataURL('image/png'); } else return;
     const a=document.createElement('a'); a.download=`equilibria-${mode==='couple'?'coupled':active.def.id}-${Date.now()}.png`; a.href=url; a.click(); });
   $('#btn-breed').addEventListener('click',breed);
+
+  // palette (global generative color)
+  $('#btn-pal-shuffle').addEventListener('click',()=>{ window.Substrate.randomPalette((Math.random()*1e9)|0); toast('palette shuffled'); });
+  $('#btn-pal-reset').addEventListener('click',()=>{ window.Substrate.useThermalVerdant(); toast('thermal-verdant'); });
+  $('#pal-drift').addEventListener('input',()=>{ const v=+$('#pal-drift').value; window.Substrate.setDrift(v); $('#pal-drift-val').textContent=v.toFixed(2); });
   function compositeCouple(){ const cs=couple.cells; if(!cs.length) return null;
     const cw=cs[0].canvas.width, ch=cs[0].canvas.height;
     const big=document.createElement('canvas'); big.width=cw*2; big.height=ch*2;
