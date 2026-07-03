@@ -113,6 +113,34 @@
   .mx-cell.diag { opacity:.14; cursor:default; border-style:dashed; }
   .rhint { font-size:9px; color:var(--dim); line-height:1.5; margin:6px 0 12px; }
 
+  /* modulation (part 2: control over time) */
+  .kr { display:flex; gap:7px; align-items:center; }
+  .modbtn { background:transparent; border:1px solid var(--edge); color:var(--dim); border-radius:4px;
+    font-size:12px; line-height:1; padding:0 5px; cursor:pointer; font-family:var(--mono); }
+  .modbtn:hover { border-color:var(--phos); color:var(--phos); }
+  .modbtn.on { color:var(--phos); border-color:var(--phos); box-shadow:0 0 8px rgba(0,255,156,.3); }
+  .knob.modon .kv { color:var(--phos); }
+  .slwrap { position:relative; }
+  .modbar { position:absolute; top:-3px; width:2px; height:9px; background:var(--phos);
+    box-shadow:0 0 6px var(--phos); pointer-events:none; opacity:0; }
+  .knob.modon .modbar { opacity:.9; }
+  .moded { display:none; margin-top:7px; padding:7px 8px; border:1px solid var(--edge);
+    border-radius:5px; background:rgba(0,255,156,0.04); }
+  .knob.modon .moded { display:block; }
+  .shrow { display:flex; gap:3px; margin-bottom:6px; }
+  .shbtn { flex:1; background:transparent; border:1px solid var(--edge); color:var(--dim); border-radius:3px;
+    font-size:8px; letter-spacing:.04em; padding:3px 0; cursor:pointer; font-family:var(--mono); }
+  .shbtn.on { color:#0a0e0b; background:var(--phos); border-color:var(--phos); font-weight:600; }
+  .mrow { display:flex; align-items:center; gap:6px; margin-top:5px; }
+  .mrow label { font-size:8px; letter-spacing:.1em; text-transform:uppercase; color:var(--dim); width:34px; }
+  .mrow input { flex:1; }
+  .transport { display:flex; align-items:center; gap:8px; margin-bottom:5px; }
+  .tplay { background:transparent; border:1px solid var(--phos); color:var(--phos); border-radius:5px;
+    font-size:10px; letter-spacing:.1em; padding:6px 12px; cursor:pointer; font-family:var(--mono); white-space:nowrap; }
+  .tplay.paused { border-color:var(--dim); color:var(--dim); }
+  .ttempo { flex:1; }
+  .ttime { font-size:9px; color:var(--gold); letter-spacing:.08em; min-width:42px; text-align:right; }
+
   .commission textarea { width:100%; min-height:52px; resize:vertical; background:#0a0e0b;
     color:var(--ink); border:1px solid var(--edge); border-radius:6px; padding:8px;
     font-family:var(--mono); font-size:11px; margin-bottom:6px; }
@@ -182,6 +210,13 @@
       <div class="btnrow"><button class="btn" id="btn-loop">⭯ Loop all</button><button class="btn" id="btn-clear">✕ Clear</button></div>
       <div class="rhint">Each cell wires a source's output into a target's input. Green = connected. Watch the emit meters drive each other.</div>
     </div>
+    <div class="lbl solo-only">Motion · transport</div>
+    <div class="transport solo-only">
+      <button class="tplay" id="t-play">⏸ Pause</button>
+      <input class="ttempo" type="range" id="t-tempo" min="0" max="3" step="0.01" value="1" title="tempo">
+      <span class="ttime" id="t-time">0.0s</span>
+    </div>
+    <div class="hint solo-only" style="margin:0 0 4px">Tap ∿ on any knob to modulate it over time — all modulators share this clock.</div>
     <div class="lbl solo-only">Knobs</div>
     <div id="knobs"></div>
     <div class="lbl">Actions</div>
@@ -399,21 +434,88 @@
 
   // ═══════════ SOLO ═══════════
   function makeCanvas(){ const c=document.createElement('canvas'); host.innerHTML=''; host.appendChild(c); return c; }
+  // ═══════════ MODULATION — control over time (part 2) ═══════════
+  // Global transport clock. Modulators drive knob values on top of a stored
+  // "base"; the cartridge reads params live, so it just follows.
+  const motion = { playing:true, t:0, tempo:1 };
+  let mods = {};      // paramKey -> { shape, rate, depth, base, noise }
+  let knobEls = {};   // paramKey -> { val, inp, bar, wrap, modbtn, fmt, shBtns, rateI, depthI }
+
+  function wave(shape, ph, noise){
+    const x = ph - Math.floor(ph);
+    switch(shape){
+      case 'tri': return 4*Math.abs(x-0.5)-1;     // triangle
+      case 'saw': return 2*x-1;                    // ramp
+      case 'sqr': return x<0.5 ? 1 : -1;           // square
+      case 'rnd': return noise ? noise(ph*0.5, 0) : 0;  // smooth random walk
+      default:    return Math.sin(ph*6.283185307); // sine
+    }
+  }
+  function toggleMod(key){
+    const rec = knobEls[key]; if(!rec || !active) return;
+    const p = active.def.params[key];
+    if(mods[key]){
+      active.params[key] = mods[key].base; delete mods[key];
+      rec.wrap.classList.remove('modon'); rec.modbtn.classList.remove('on');
+      rec.val.textContent = rec.fmt(active.params[key]); rec.inp.value = active.params[key];
+    } else {
+      mods[key] = { shape:'sin', rate:0.3, depth:0.4, base:active.params[key],
+        noise: window.Substrate.noise2D((Math.random()*1e6)|0) };
+      rec.wrap.classList.add('modon'); rec.modbtn.classList.add('on');
+      for(const q in rec.shBtns) rec.shBtns[q].classList.toggle('on', q==='sin');
+      rec.rateI.value = mods[key].rate; rec.depthI.value = mods[key].depth;
+    }
+  }
+  function applyMods(dt){
+    if(motion.playing) motion.t += dt/1000 * motion.tempo;
+    for(const key in mods){
+      const m = mods[key], p = active.def.params[key];
+      const out = wave(m.shape, motion.t*m.rate, m.noise);
+      let v = m.base + out * m.depth * (p.max - p.min) * 0.5;
+      v = v < p.min ? p.min : v > p.max ? p.max : v;
+      active.params[key] = p.int ? Math.round(v) : v;
+      const rec = knobEls[key];
+      if(rec){ rec.val.textContent = rec.fmt(active.params[key]);
+        rec.bar.style.left = ((active.params[key]-p.min)/((p.max-p.min)||1)*100)+'%'; }
+    }
+    const te = $('#t-time'); if(te) te.textContent = motion.t.toFixed(1)+'s';
+  }
+
   function buildKnobs(def, params){
-    knobsEl.innerHTML='';
+    knobsEl.innerHTML=''; knobEls={};
     const keys=Object.keys(def.params||{});
     if(!keys.length){ knobsEl.innerHTML='<div class="hint">No knobs on this cartridge.</div>'; return; }
     for(const key of keys){
-      const p=def.params[key]; const wrap=document.createElement('div'); wrap.className='knob';
+      const p=def.params[key]; const fmt=v=>p.int?(v|0):(+v).toFixed(2);
+      const wrap=document.createElement('div'); wrap.className='knob';
       const head=document.createElement('div'); head.className='kh';
       const nm=document.createElement('span'); nm.textContent=p.label||key;
-      const val=document.createElement('span'); val.className='kv';
-      const fmt=v=>p.int?(v|0):(+v).toFixed(2); val.textContent=fmt(params[key]);
-      head.appendChild(nm); head.appendChild(val);
-      const inp=document.createElement('input'); inp.type='range';
-      inp.min=p.min; inp.max=p.max; inp.step=p.step; inp.value=params[key];
-      inp.addEventListener('input',()=>{ params[key]=p.int?(+inp.value|0):+inp.value; val.textContent=fmt(params[key]); scheduleHash(); });
-      wrap.appendChild(head); wrap.appendChild(inp); knobsEl.appendChild(wrap);
+      const kr=document.createElement('span'); kr.className='kr';
+      const val=document.createElement('span'); val.className='kv'; val.textContent=fmt(params[key]);
+      const modbtn=document.createElement('button'); modbtn.className='modbtn'; modbtn.textContent='∿'; modbtn.title='modulate over time';
+      kr.appendChild(val); kr.appendChild(modbtn); head.appendChild(nm); head.appendChild(kr);
+      const sl=document.createElement('div'); sl.className='slwrap';
+      const inp=document.createElement('input'); inp.type='range'; inp.min=p.min; inp.max=p.max; inp.step=p.step; inp.value=params[key];
+      const bar=document.createElement('i'); bar.className='modbar';
+      sl.appendChild(inp); sl.appendChild(bar);
+      inp.addEventListener('input',()=>{ const v=p.int?(+inp.value|0):+inp.value;
+        if(mods[key]) mods[key].base=v; else { params[key]=v; val.textContent=fmt(v); } scheduleHash(); });
+      // modulator editor (shown when modulated)
+      const ed=document.createElement('div'); ed.className='moded';
+      const shrow=document.createElement('div'); shrow.className='shrow'; const shBtns={};
+      ['sin','tri','saw','sqr','rnd'].forEach(s=>{ const b=document.createElement('button'); b.className='shbtn'; b.textContent=s.toUpperCase();
+        b.addEventListener('click',()=>{ if(mods[key]){ mods[key].shape=s; for(const q in shBtns) shBtns[q].classList.toggle('on',q===s); } });
+        shBtns[s]=b; shrow.appendChild(b); });
+      const mkRow=(txt,mn,mx,st,onIn)=>{ const r=document.createElement('div'); r.className='mrow';
+        const l=document.createElement('label'); l.textContent=txt;
+        const i=document.createElement('input'); i.type='range'; i.min=mn; i.max=mx; i.step=st;
+        i.addEventListener('input',()=>onIn(+i.value)); r.appendChild(l); r.appendChild(i); return i; };
+      const rateI=mkRow('rate',0.02,2,0.01,v=>{ if(mods[key]) mods[key].rate=v; });
+      const depthI=mkRow('depth',0,1,0.01,v=>{ if(mods[key]) mods[key].depth=v; });
+      ed.appendChild(shrow); ed.appendChild(rateI.parentNode); ed.appendChild(depthI.parentNode);
+      wrap.appendChild(head); wrap.appendChild(sl); wrap.appendChild(ed); knobsEl.appendChild(wrap);
+      knobEls[key]={val,inp,bar,wrap,modbtn,fmt,shBtns,rateI,depthI};
+      modbtn.addEventListener('click',()=>toggleMod(key));
     }
   }
   function load(def, opts){
@@ -430,11 +532,12 @@
     try{ instance=def.create({canvas,width:canvas.width,height:canvas.height,dpr,params,seed,Substrate:window.Substrate}); }
     catch(e){ hudT.textContent=def.name; hudB.textContent='ERROR: '+e.message; console.error('[studio]',def.id,e); return; }
     active={def,instance,params,canvas,seed};
+    mods={};   // modulators are per-cartridge; clear on load
     buildKnobs(def,params);
     hudT.textContent=def.name; hudB.textContent=def.blurb||'';
     last=performance.now(); readClock=0;
     const loop=now=>{ const dt=Math.min(now-last,60); last=now;
-      window.Substrate.stepColor(dt);
+      window.Substrate.stepColor(dt); applyMods(dt);
       try{ instance.step(dt); }catch(e){ hudB.textContent='step error: '+e.message; console.error(e); return; }
       readClock+=dt;
       if(readClock>300 && instance.readouts){ readClock=0; const r=instance.readouts();
@@ -627,6 +730,11 @@
   $('#btn-pal-shuffle').addEventListener('click',()=>{ window.Substrate.randomPalette((Math.random()*1e9)|0); toast('palette shuffled'); });
   $('#btn-pal-reset').addEventListener('click',()=>{ window.Substrate.useThermalVerdant(); toast('thermal-verdant'); });
   $('#pal-drift').addEventListener('input',()=>{ const v=+$('#pal-drift').value; window.Substrate.setDrift(v); $('#pal-drift-val').textContent=v.toFixed(2); });
+
+  // transport (motion clock)
+  $('#t-play').addEventListener('click',()=>{ motion.playing=!motion.playing; const b=$('#t-play');
+    b.textContent = motion.playing?'⏸ Pause':'▶ Play'; b.classList.toggle('paused',!motion.playing); });
+  $('#t-tempo').addEventListener('input',()=>{ motion.tempo=+$('#t-tempo').value; });
   function compositeCouple(){ const cs=couple.cells; if(!cs.length) return null;
     const cw=cs[0].canvas.width, ch=cs[0].canvas.height;
     const big=document.createElement('canvas'); big.width=cw*2; big.height=ch*2;
