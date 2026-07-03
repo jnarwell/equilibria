@@ -406,6 +406,10 @@
 <script src="cartridges/13-chladni.js"></script>
 <script src="cartridges/14-fluid.js"></script>
 <script src="cartridges/15-life.js"></script>
+<script src="cartridges/16-rayleigh.js"></script>
+<script src="cartridges/17-acoustic.js"></script>
+<script src="cartridges/18-deposition.js"></script>
+<script src="cartridges/19-dendrite.js"></script>
 
 <!-- ═══════════════ STUDIO SHELL ═══════════════ -->
 <script>
@@ -540,8 +544,10 @@
       window.Substrate.stepColor(dt); applyMods(dt);
       try{ instance.step(dt); }catch(e){ hudB.textContent='step error: '+e.message; console.error(e); return; }
       readClock+=dt;
-      if(readClock>300 && instance.readouts){ readClock=0; const r=instance.readouts();
-        readoutsEl.innerHTML=Object.entries(r).map(([k,v])=>`${k} <b>${v}</b>`).join('<br>'); }
+      if(readClock>300 && instance.readouts){ readClock=0;
+        try{ const r=instance.readouts();
+          readoutsEl.innerHTML=Object.entries(r).map(([k,v])=>`${k} <b>${v}</b>`).join('<br>'); }
+        catch(e){ /* a readout bug must not freeze the sim */ } }
       raf=requestAnimationFrame(loop); };
     raf=requestAnimationFrame(loop);
     if(!opts.silent) scheduleHash();
